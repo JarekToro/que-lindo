@@ -220,9 +220,20 @@ function CellValues({ slide, index, ci }: { slide: Slide; index: number; ci: num
       {cell.motion.type === "zoom" && (
         <VGroup label="Motion detail">
           <NumField label="Zoom from" value={cell.motion.from} min={0.5} max={3} step={0.01}
-            onChange={(from) => patch({ motion: { type: "zoom", from, to: (cell.motion as { to: number }).to } })} />
+            onChange={(from) => patch({ motion: { ...(cell.motion as Extract<Cell["motion"], { type: "zoom" }>), from } })} />
           <NumField label="Zoom to" value={cell.motion.to} min={0.5} max={3} step={0.01}
-            onChange={(to) => patch({ motion: { type: "zoom", from: (cell.motion as { from: number }).from, to } })} />
+            onChange={(to) => patch({ motion: { ...(cell.motion as Extract<Cell["motion"], { type: "zoom" }>), to } })} />
+          <NumField label="Focus X" value={cell.motion.origin[0]} min={0} max={1} step={0.01} display="pct"
+            onChange={(x) => {
+              const m = cell.motion as Extract<Cell["motion"], { type: "zoom" }>;
+              patch({ motion: { ...m, origin: [x, m.origin[1]] } });
+            }} />
+          <NumField label="Focus Y" value={cell.motion.origin[1]} min={0} max={1} step={0.01} display="pct"
+            onChange={(y) => {
+              const m = cell.motion as Extract<Cell["motion"], { type: "zoom" }>;
+              patch({ motion: { ...m, origin: [m.origin[0], y] } });
+            }} />
+          <p className="hint">Drag the ◎ handle on the frame to aim the zoom.</p>
         </VGroup>
       )}
       {cell.motion.type === "ken_burns" && (

@@ -59,7 +59,9 @@ export function defaultSlide(partial: Partial<Slide> = {}): Slide {
 
 /** Alternate slow zoom in/out so consecutive photos don't move identically. */
 export function autoMotion(index: number): Motion {
-  return index % 2 === 0 ? { type: "zoom", from: 1.0, to: 1.12 } : { type: "zoom", from: 1.12, to: 1.0 };
+  return index % 2 === 0
+    ? { type: "zoom", from: 1.0, to: 1.12, origin: [0.5, 0.5] }
+    : { type: "zoom", from: 1.12, to: 1.0, origin: [0.5, 0.5] };
 }
 
 export function cellFor(media: ImportedMedia, index = 0): Cell {

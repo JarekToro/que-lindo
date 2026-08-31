@@ -85,6 +85,13 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   touch-action: none; user-select: none; -webkit-user-select: none;
 }
 .text-handle.active { background: var(--accent); color: var(--accent-ink); border-style: solid; }
+.zoom-handle {
+  position: absolute; width: 26px; height: 26px; padding: 0; transform: translate(-50%, -50%);
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; border: 1px solid var(--accent); background: rgba(0, 0, 0, 0.55);
+  color: var(--accent); font-size: 15px; cursor: grab;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
 .transport { display: flex; align-items: center; gap: 8px; }
 .transport input[type="range"] { flex: 1; max-width: none; }
 .transport .play { width: 44px; }
