@@ -286,7 +286,10 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 .slide-card.insert-before { box-shadow: -4px 0 0 -1px var(--accent); }
 .slide-card.insert-after { box-shadow: 4px 0 0 -1px var(--accent); }
 
-.slide-thumb { position: relative; width: 100%; background: #000; border-radius: 5px; overflow: hidden; }
+.slide-thumb {
+  position: relative; width: 100%; background: #000; border-radius: 5px; overflow: hidden;
+  container-type: size;
+}
 .thumb-cell { position: absolute; overflow: hidden; border-radius: 2px; }
 .thumb-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .slide-card.receiving .thumb-cell {
@@ -298,10 +301,10 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;
   color: var(--muted); background: var(--panel-2); font-size: 14px;
 }
-.thumb-title {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  padding: 6px; text-align: center; font-size: 11px; color: var(--text);
-  overflow: hidden;
+.thumb-text {
+  position: absolute; max-width: 96%; text-align: center; pointer-events: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); line-height: 1.2;
 }
 .card-count {
   position: absolute; top: 6px; right: 6px; min-width: 18px; height: 18px; padding: 0 4px;
@@ -331,6 +334,17 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 }
 .band-member img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .band-member.focused { border-color: var(--accent); }
+.band-member.band-text { background: var(--panel); display: flex; align-items: center; justify-content: center; }
+.band-text-body {
+  padding: 8px; font-size: 13px; color: var(--text); text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  max-width: 100%; overflow: hidden;
+}
+.band-text-mark {
+  width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center;
+  justify-content: center; background: var(--accent); color: var(--accent-ink);
+  font-weight: 700; font-size: 12px;
+}
 .member-remove {
   position: absolute; top: 4px; right: 4px; padding: 0 6px; font-size: 11px;
   background: rgba(0, 0, 0, 0.65); border-color: transparent;

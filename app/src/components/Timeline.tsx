@@ -3,6 +3,7 @@ import { revealPath } from "../api";
 import { layoutRects } from "../layout";
 import { ensureAudioCtx, mixForRev } from "../mixcache";
 import {
+  ANCHOR_POINTS,
   audioTrackFor,
   autoLayout,
   bindSlides,
@@ -11,9 +12,12 @@ import {
   dissolveGroup,
   freshId,
   GROUP_MAX,
+  membersOf,
   slideForCell,
   slideForMedia,
+  slideForText,
 } from "../presets";
+import type { Member } from "../presets";
 import { useEditor } from "../store";
 import type { Cell, MediaInfo, MediaItem, Slide } from "../types";
 
@@ -29,7 +33,7 @@ import type { Cell, MediaInfo, MediaItem, Slide } from "../types";
 type DragPayload =
   | { kind: "slide"; index: number }
   | { kind: "media"; path: string }
-  | { kind: "member"; slide: number; cell: number }
+  | { kind: "member"; slide: number; member: Member }
   | { kind: "text" };
 
 type MenuEntry = { label: string; disabled?: boolean; onPick: () => void } | "sep";
@@ -135,7 +139,6 @@ function SlideThumb({
   const H = W / aspect;
   const margin = receiving ? 0.04 : slide.margin;
   const rects = layoutRects(layout, n, W, H, margin, slide.gutter);
-  const title = slide.texts.find((t) => t.text.trim());
 
   return (
     <div
@@ -172,7 +175,29 @@ function SlideThumb({
           }}
         />
       )}
-      {slide.cells.length === 0 && title && <span className="thumb-title">{title.text}</span>}
+      {slide.texts.slice(0, 3).map((t, i) => {
+        if (!t.text.trim()) return null;
+        const [ax, ay] = ANCHOR_POINTS[t.anchor] ?? [0.5, 0.5];
+        const fx = Math.min(Math.max(ax + t.offset[0], 0), 1);
+        const fy = Math.min(Math.max(ay + t.offset[1], 0), 1);
+        return (
+          <span
+            key={`t${i}`}
+            className="thumb-text"
+            style={{
+              left: `${fx * 100}%`,
+              top: `${fy * 100}%`,
+              transform: `translate(${-ax * 100}%, ${-ay * 100}%)`,
+              fontSize: `${Math.max(t.size * 100, 7)}cqh`,
+              fontWeight: t.weight >= 600 ? 700 : 400,
+              fontStyle: t.italic ? "italic" : "normal",
+              color: t.color,
+            }}
+          >
+            {t.text}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -231,7 +256,8 @@ export default function Timeline({
 
   // ---- derived group/band state ----
   const openIdx = openGroupId === null ? -1 : slides.findIndex((s) => s.id === openGroupId);
-  const openGroup = openIdx >= 0 && slides[openIdx].cells.length > 1 ? slides[openIdx] : null;
+  const openGroup =
+    openIdx >= 0 && membersOf(slides[openIdx]).length > 1 ? slides[openIdx] : null;
   useEffect(() => {
     // The group left the timeline or dissolved — the band follows it out.
     if (openGroupId !== null && !openGroup) setOpenGroupId(null);
@@ -432,12 +458,13 @@ export default function Timeline({
     move(from, to);
   };
 
-  /** Bind: source slide's photos join the target slide. */
+  /** Bind: source slide's members — photos and titles — join the target. */
   const bind = (targetIdx: number, sourceIdx: number) => {
     if (targetIdx === sourceIdx) return;
     const target = slides[targetIdx];
     const source = slides[sourceIdx];
-    if (target.cells.length + source.cells.length > GROUP_MAX || source.cells.length === 0) return;
+    if (target.cells.length + source.cells.length > GROUP_MAX) return;
+    if (membersOf(source).length === 0) return;
     mutate((p) => {
       const next = p.slides
         .map((s, i) => (i === targetIdx ? bindSlides(target, source) : s))
@@ -461,26 +488,35 @@ export default function Timeline({
     }));
   };
 
-  /** Split one member out — it re-enters the timeline as its own slide
-   * directly after the group. Down to one member, the group dissolves. */
-  const splitMember = (slideIdx: number, cellIdx: number) => {
+  /** Split one member — photo or title — out of a group: it re-enters the
+   * timeline as its own slide directly after. A lone photo left behind
+   * becomes an ordinary slide again. */
+  const splitMember = (slideIdx: number, member: Member) => {
     const group = slides[slideIdx];
-    if (group.cells.length < 2) return;
-    const cell = group.cells[cellIdx];
-    const rest = group.cells.filter((_, i) => i !== cellIdx);
+    if (membersOf(group).length < 2) return;
+    let remaining: Slide;
+    let lifted: Slide;
+    if (member.type === "cell") {
+      const cell = group.cells[member.index];
+      if (!cell) return;
+      const rest = group.cells.filter((_, i) => i !== member.index);
+      remaining = { ...group, cells: rest, layout: autoLayout(rest.length) };
+      lifted = slideForCell(cell, cellInfo(cell, thumbs));
+    } else {
+      const text = group.texts[member.index];
+      if (!text) return;
+      remaining = { ...group, texts: group.texts.filter((_, i) => i !== member.index) };
+      lifted = slideForText(text);
+    }
+    if (remaining.cells.length === 1 && remaining.texts.length === 0) {
+      remaining = dissolveGroup(remaining, cellInfo(remaining.cells[0], thumbs));
+    }
     mutate((p) => {
-      let remaining: Slide = {
-        ...group,
-        cells: rest,
-        layout: autoLayout(rest.length),
-      };
-      if (rest.length === 1) remaining = dissolveGroup(remaining, cellInfo(rest[0], thumbs));
-      const lifted = slideForCell(cell, cellInfo(cell, thumbs));
       const next = [...p.slides];
       next.splice(slideIdx, 1, remaining, lifted);
       return { ...p, slides: next };
     });
-    setMemberFocus((f) => Math.max(0, Math.min(f, rest.length - 1)));
+    setMemberFocus((f) => Math.max(0, Math.min(f, membersOf(remaining).length - 1)));
   };
 
   const addEmpty = () => insertSlides(slides.length, [defaultSlide()]);
@@ -533,14 +569,16 @@ export default function Timeline({
     insertSlides(idxs[idxs.length - 1] + 1, copies);
   };
 
-  /** Merge the selection into one group slide at the earliest position. */
+  /** Merge the selection into one group slide at the earliest position —
+   * photos join the collage, titles join the text layer. */
   const mergeSlides = (idxs: number[]) => {
-    const withCells = idxs.filter((i) => slides[i].cells.length > 0);
-    const cells = withCells.flatMap((i) => slides[i].cells);
-    if (withCells.length < 2 || cells.length > GROUP_MAX) return;
-    const targetIdx = withCells[0];
+    const withMembers = idxs.filter((i) => membersOf(slides[i]).length > 0);
+    const cells = withMembers.flatMap((i) => slides[i].cells);
+    const texts = withMembers.flatMap((i) => slides[i].texts);
+    if (withMembers.length < 2 || cells.length > GROUP_MAX) return;
+    const targetIdx = withMembers[0];
     const target = slides[targetIdx];
-    const drop = new Set(withCells.slice(1));
+    const drop = new Set(withMembers.slice(1));
     mutate((p) => ({
       ...p,
       slides: p.slides
@@ -549,10 +587,11 @@ export default function Timeline({
             ? {
                 ...target,
                 cells: cells.map((c): Cell => ({ ...c, fit: "cover", motion: { type: "none" } })),
+                texts,
                 layout: autoLayout(cells.length),
-                margin: 0.04,
+                margin: cells.length > 1 ? 0.04 : target.margin,
                 gutter: 0.02,
-                background: { type: "default" as const },
+                background: cells.length > 1 ? { type: "default" as const } : target.background,
               }
             : s,
         )
@@ -561,15 +600,19 @@ export default function Timeline({
     selectSlide(targetIdx, false);
   };
 
-  /** Explode a group: every member becomes its own slide in place. */
+  /** Explode a group: every member — photo or title — becomes its own slide
+   * in place; the first part inherits the slide's identity and timing. */
   const splitApart = (i: number) => {
     const group = slides[i];
-    if (group.cells.length < 2) return;
+    if (membersOf(group).length < 2) return;
     mutate((p) => {
-      const first = dissolveGroup({ ...group, cells: [group.cells[0]] }, cellInfo(group.cells[0], thumbs));
-      const rest = group.cells.slice(1).map((c) => slideForCell(c, cellInfo(c, thumbs)));
+      const parts: Slide[] = [
+        ...group.cells.map((c) => slideForCell(c, cellInfo(c, thumbs))),
+        ...group.texts.map((t) => slideForText(t)),
+      ];
+      parts[0] = { ...parts[0], id: group.id, duration: group.duration, transition: group.transition };
       const next = [...p.slides];
-      next.splice(i, 1, first, ...rest);
+      next.splice(i, 1, ...parts);
       return { ...p, slides: next };
     });
     setOpenGroupId(null);
@@ -619,7 +662,7 @@ export default function Timeline({
       entries.push("sep");
       entries.push({ label: `Hide ${n} slides — move to “Not used”`, onPick: () => hideSlides(idxs) });
     } else {
-      if (s.cells.length > 1) {
+      if (membersOf(s).length > 1) {
         entries.push({
           label: "Open group",
           onPick: () => {
@@ -627,7 +670,7 @@ export default function Timeline({
             setMemberFocus(0);
           },
         });
-        entries.push({ label: `Split into ${s.cells.length} slides`, onPick: () => splitApart(i) });
+        entries.push({ label: `Split into ${membersOf(s).length} slides`, onPick: () => splitApart(i) });
         entries.push("sep");
       }
       entries.push({ label: "Add title on this slide", onPick: () => addTitle(i) });
@@ -666,7 +709,14 @@ export default function Timeline({
   const dragStart = useRef<{ payload: DragPayload; x: number; y: number } | null>(null);
   const dropRef = useRef<DropZone | null>(null);
   const overRef = useRef<{ grid: boolean; shelf: boolean }>({ grid: false, shelf: false });
-  const [ghost, setGhost] = useState<{ x: number; y: number; label: string; kind: DragPayload["kind"] } | null>(null);
+  const [ghost, setGhost] = useState<{
+    x: number;
+    y: number;
+    label: string;
+    kind: DragPayload["kind"];
+    /** Whether the payload adds photos to a collage (drives the seat preview). */
+    carriesCells: boolean;
+  } | null>(null);
   const [shelfHot, setShelfHot] = useState(false);
 
   const setDropBoth = (z: DropZone | null) => {
@@ -677,8 +727,10 @@ export default function Timeline({
   const dragLabel = (p: DragPayload): string => {
     if (p.kind === "slide") {
       const s = slides[p.index];
-      return s && s.cells.length > 1 ? `Group of ${s.cells.length}` : `Slide ${p.index + 1}`;
+      const n = s ? membersOf(s).length : 0;
+      return n > 1 ? `Group of ${n}` : `Slide ${p.index + 1}`;
     }
+    if (p.kind === "member") return p.member.type === "text" ? "Title" : "Photo";
     if (p.kind === "media") return p.path.replace(/^.*[/\\]/, "");
     if (p.kind === "text") return "Title";
     return "Photo";
@@ -769,8 +821,13 @@ export default function Timeline({
     if (!st) return;
     if (!ghost && Math.hypot(e.clientX - st.x, e.clientY - st.y) < 5) return;
     if (st.payload.kind === "slide") setDragging(st.payload.index);
-    setGhost({ x: e.clientX, y: e.clientY, label: dragLabel(st.payload), kind: st.payload.kind });
-    updateDragTarget(e.clientX, e.clientY, st.payload);
+    const p = st.payload;
+    const carriesCells =
+      p.kind === "media" ||
+      (p.kind === "slide" && (slides[p.index]?.cells.length ?? 0) > 0) ||
+      (p.kind === "member" && p.member.type === "cell");
+    setGhost({ x: e.clientX, y: e.clientY, label: dragLabel(p), kind: p.kind, carriesCells });
+    updateDragTarget(e.clientX, e.clientY, p);
   };
 
   const endDrag = () => {
@@ -787,7 +844,7 @@ export default function Timeline({
 
     const p = st.payload;
     if (p.kind === "member") {
-      splitMember(p.slide, p.cell);
+      splitMember(p.slide, p.member);
       return;
     }
     if (p.kind === "text") {
@@ -843,7 +900,7 @@ export default function Timeline({
     if (e.key === "Enter") {
       e.preventDefault();
       const s = slides[selected];
-      if (s && s.cells.length > 1) {
+      if (s && membersOf(s).length > 1) {
         setOpenGroupId((id) => (id === s.id ? null : s.id));
         setMemberFocus(0);
       }
@@ -866,13 +923,14 @@ export default function Timeline({
 
   const bandKeys = (e: React.KeyboardEvent) => {
     if (!openGroup) return;
+    const members = membersOf(openGroup);
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
       const d = e.key === "ArrowLeft" ? -1 : 1;
-      setMemberFocus((f) => Math.max(0, Math.min(f + d, openGroup.cells.length - 1)));
+      setMemberFocus((f) => Math.max(0, Math.min(f + d, members.length - 1)));
     } else if (e.key === "Backspace" || e.key === "Delete") {
       e.preventDefault();
-      splitMember(openIdx, memberFocus);
+      if (members[memberFocus]) splitMember(openIdx, members[memberFocus]);
     } else if (e.key === "Escape") {
       e.preventDefault();
       setOpenGroupId(null);
@@ -910,33 +968,50 @@ export default function Timeline({
       ref={bandRef}
       tabIndex={0}
       role="group"
-      aria-label={`Group of ${openGroup.cells.length} — arrow keys walk members, delete splits one out, escape closes`}
+      aria-label={`Group of ${membersOf(openGroup).length} — arrow keys walk members, delete splits one out, escape closes`}
       onKeyDown={bandKeys}
     >
       <div className="band-members">
-        {openGroup.cells.map((cell, j) => {
-          const thumb = cellThumb(cell, thumbs);
+        {membersOf(openGroup).map((m, j) => {
+          const text = m.type === "text" ? openGroup.texts[m.index] : undefined;
+          const thumb = m.type === "cell" ? cellThumb(openGroup.cells[m.index], thumbs) : null;
           return (
             <div
-              key={j}
-              className={`band-member ${j === memberFocus ? "focused" : ""}`}
-              onPointerDown={(e) => beginDrag(e, { kind: "member", slide: openIdx, cell: j })}
+              key={`${m.type}-${m.index}`}
+              className={`band-member ${m.type === "text" ? "band-text" : ""} ${j === memberFocus ? "focused" : ""}`}
+              onPointerDown={(e) => beginDrag(e, { kind: "member", slide: openIdx, member: m })}
               onPointerMove={moveDrag}
               onPointerUp={endDrag}
-              onClick={() => setMemberFocus(j)}
+              onClick={() => {
+                setMemberFocus(j);
+                if (m.type === "text") {
+                  // A title member opens straight into its editor.
+                  selectSlide(openIdx, false);
+                  selectText(m.index);
+                }
+              }}
               onContextMenu={(e) =>
                 openMenu(e, [
-                  { label: "Split into its own slide", onPick: () => splitMember(openIdx, j) },
+                  { label: "Split into its own slide", onPick: () => splitMember(openIdx, m) },
                 ])
               }
             >
-              {thumb ? <img src={thumb} alt="" draggable={false} /> : <span className="thumb-empty" />}
+              {m.type === "text" ? (
+                <span className="band-text-body" style={{ fontStyle: text?.italic ? "italic" : "normal" }}>
+                  <span className="band-text-mark">T</span>
+                  {text?.text.trim() ? text.text : text?.role}
+                </span>
+              ) : thumb ? (
+                <img src={thumb} alt="" draggable={false} />
+              ) : (
+                <span className="thumb-empty" />
+              )}
               <button
                 className="member-remove"
                 title="Split into its own slide after this group"
                 onClick={(e) => {
                   e.stopPropagation();
-                  splitMember(openIdx, j);
+                  splitMember(openIdx, m);
                 }}
               >
                 ✕
@@ -985,7 +1060,7 @@ export default function Timeline({
         tabIndex={i === selected ? 0 : -1}
         role="option"
         aria-selected={i === selected}
-        aria-label={`Slide ${i + 1} of ${slides.length}${s.cells.length > 1 ? `, group of ${s.cells.length}` : ""}${proportional ? `, ${s.duration.toFixed(1)} seconds` : ""}`}
+        aria-label={`Slide ${i + 1} of ${slides.length}${membersOf(s).length > 1 ? `, group of ${membersOf(s).length}` : ""}${proportional ? `, ${s.duration.toFixed(1)} seconds` : ""}`}
         data-index={i}
         onPointerDown={(e) => beginDrag(e, { kind: "slide", index: i })}
         onPointerMove={moveDrag}
@@ -993,7 +1068,7 @@ export default function Timeline({
         onClick={(e) => clickCard(e, i)}
         onContextMenu={(e) => cardMenu(e, i)}
         onDoubleClick={() => {
-          if (mode === "arrange" && s.cells.length > 1) {
+          if (mode === "arrange" && membersOf(s).length > 1) {
             setOpenGroupId(s.id);
             setMemberFocus(0);
           }
@@ -1003,10 +1078,10 @@ export default function Timeline({
           slide={s}
           thumbs={thumbs}
           aspect={cardAspect}
-          receiving={isReceiving && ghost?.kind !== "text"}
+          receiving={isReceiving && ghost?.carriesCells === true}
           fill={proportional && vertical}
         />
-        {s.cells.length > 1 && <span className="card-count">{s.cells.length}</span>}
+        {membersOf(s).length > 1 && <span className="card-count">{membersOf(s).length}</span>}
         <span className="card-index">{i + 1}</span>
         {proportional && <span className="card-duration">{s.duration.toFixed(1)}s</span>}
         {proportional && firstText && (

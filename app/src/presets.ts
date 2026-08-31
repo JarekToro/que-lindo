@@ -121,8 +121,9 @@ export function autoLayout(n: number): Layout {
   return { type: "grid", rows: 2, cols: 4 };
 }
 
-/** Merge `source`'s cells into `target` — the bind gesture. Keeps target's
- * identity, duration, texts and transition; recomposes the collage. */
+/** Merge `source`'s members into `target` — the bind gesture. Photos join
+ * the collage, titles join the slide's text layer; target keeps its
+ * identity, duration and transition. */
 export function bindSlides(target: Slide, source: Slide): Slide {
   const cells = [...target.cells, ...source.cells].map(
     (c): Cell => ({ ...c, fit: "cover", motion: { type: "none" } }),
@@ -130,11 +131,29 @@ export function bindSlides(target: Slide, source: Slide): Slide {
   return {
     ...target,
     cells,
+    texts: [...target.texts, ...source.texts],
     layout: autoLayout(cells.length),
-    margin: 0.04,
+    margin: cells.length > 1 ? 0.04 : target.margin,
     gutter: 0.02,
-    background: { type: "default" },
+    background: cells.length > 1 ? { type: "default" } : target.background,
   };
+}
+
+/** A slide member: a photo/video cell, or a title/caption text. Groups are
+ * made of members — photos, videos, titles alike. */
+export type Member = { type: "cell"; index: number } | { type: "text"; index: number };
+
+export function membersOf(s: Slide): Member[] {
+  return [
+    ...s.cells.map((_, index): Member => ({ type: "cell", index })),
+    ...s.texts.map((_, index): Member => ({ type: "text", index })),
+  ];
+}
+
+/** A slide carrying one text lifted out of a group — the text counterpart of
+ * `slideForCell`. */
+export function slideForText(text: TextOverlay): Slide {
+  return defaultSlide({ texts: [{ ...text }] });
 }
 
 /** A single-photo slide for a cell lifted out of a group — the inverse of
