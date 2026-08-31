@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { setProjectBackend } from "./api";
 import { emptyProject } from "./presets";
-import type { ImportedMedia, Project, Slide, Timing } from "./types";
+import type { MediaInfo, MediaItem, Project, Slide, Timing } from "./types";
 
 const UNDO_LIMIT = 100;
 
@@ -17,7 +17,7 @@ export interface EditorState {
   selectedCell: number | null;
   selectedText: number | null;
 
-  media: ImportedMedia[];
+  media: MediaItem[];
   time: number;
   playing: boolean;
 
@@ -31,7 +31,9 @@ export interface EditorState {
   selectSlide(index: number, seek?: boolean): void;
   selectCell(index: number | null): void;
   selectText(index: number | null): void;
-  addMedia(items: ImportedMedia[]): void;
+  beginImport(paths: string[]): void;
+  finishImport(path: string, result: { info: MediaInfo } | { error: string }): void;
+  setThumb(path: string, thumb: string | null): void;
   removeMedia(path: string): void;
   setTime(t: number): void;
   setPlaying(playing: boolean): void;
@@ -130,16 +132,48 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({ selectedText: index, selectedCell: null });
   },
 
-  addMedia(items) {
-    const existing = new Set(get().media.map((m) => m.path));
-    const fresh = items.filter((m) => !existing.has(m.path));
-    if (fresh.length) set({ media: [...get().media, ...fresh] });
-    // Duplicates carry thumbnails the app will never show again.
-    for (const m of items) if (existing.has(m.path) && m.thumb) URL.revokeObjectURL(m.thumb);
+  beginImport(paths) {
+    // A failed item re-imports as a fresh placeholder; anything else stands.
+    const keep = new Set(
+      get().media.filter((m) => m.status !== "error" || !paths.includes(m.path)).map((m) => m.path),
+    );
+    const placeholders = paths
+      .filter((p) => !keep.has(p))
+      .map((path): MediaItem => ({ status: "pending", path }));
+    set({
+      media: [...get().media.filter((m) => keep.has(m.path)), ...placeholders],
+    });
+  },
+
+  finishImport(path, result) {
+    // Removed mid-import → drop the result silently.
+    set({
+      media: get().media.map((m): MediaItem => {
+        if (m.path !== path || m.status !== "pending") return m;
+        return "error" in result
+          ? { status: "error", path, error: result.error }
+          : { status: "ready", path, info: result.info, thumb: null };
+      }),
+    });
+  },
+
+  setThumb(path, thumb) {
+    const item = get().media.find((m) => m.path === path);
+    if (!item || item.status !== "ready") {
+      // The item left the bin while its thumbnail rendered.
+      if (thumb) URL.revokeObjectURL(thumb);
+      return;
+    }
+    set({
+      media: get().media.map((m): MediaItem =>
+        m.path === path && m.status === "ready" ? { ...m, thumb } : m,
+      ),
+    });
   },
 
   removeMedia(path) {
-    for (const m of get().media) if (m.path === path && m.thumb) URL.revokeObjectURL(m.thumb);
+    for (const m of get().media)
+      if (m.path === path && m.status === "ready" && m.thumb) URL.revokeObjectURL(m.thumb);
     set({ media: get().media.filter((m) => m.path !== path) });
   },
 

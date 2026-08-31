@@ -139,15 +139,21 @@ fn save_project(path: String, project: Project) -> Result<(), String> {
     std::fs::write(&path, project.to_json()).map_err(|e| format!("writing {path}: {e}"))
 }
 
+/// Async + blocking pool so the frontend can probe several files at once
+/// (its import worker pool bounds the concurrency).
 #[tauri::command]
-fn probe_media(state: State<AppState>, path: String) -> Result<ImportedMedia, String> {
-    let p = PathBuf::from(&path);
-    if !p.is_file() {
-        return Err(format!("{path} is not a file"));
-    }
+async fn probe_media(state: State<'_, AppState>, path: String) -> Result<ImportedMedia, String> {
     let ffmpeg = state.ffmpeg.clone();
-    let info = probe_any(&p, ffmpeg.as_ref()).map_err(|e| format!("{e:#}"))?;
-    Ok(ImportedMedia { path, info })
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = PathBuf::from(&path);
+        if !p.is_file() {
+            return Err(format!("{path} is not a file"));
+        }
+        let info = probe_any(&p, ffmpeg.as_ref()).map_err(|e| format!("{e:#}"))?;
+        Ok(ImportedMedia { path, info })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Thumbnail as raw PNG bytes. `is_image`/`duration` come from a prior

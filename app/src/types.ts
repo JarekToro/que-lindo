@@ -156,6 +156,15 @@ export interface ImportedMedia extends ProbedMedia {
   thumb: string | null;
 }
 
+/**
+ * A media-bin entry. Imports appear instantly as pending placeholders, turn
+ * ready as metadata arrives (thumbnail fills in behind), or error out.
+ */
+export type MediaItem =
+  | { status: "pending"; path: string }
+  | ({ status: "ready" } & ImportedMedia)
+  | { status: "error"; path: string; error: string };
+
 export interface Timing {
   total: number;
   spans: { start: number; end: number; transition_in: number }[];

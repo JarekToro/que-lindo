@@ -26,23 +26,46 @@ export function projectMediaPaths(p: Project): string[] {
   return [...out];
 }
 
-export async function importPaths(paths: string[]): Promise<ImportedMedia[]> {
-  const results: ImportedMedia[] = [];
-  for (const path of paths) {
-    try {
-      const probed = await probeMedia(path);
-      results.push({ ...probed, thumb: await mediaThumb(probed) });
-    } catch (e) {
-      console.error("import failed", path, e);
+const PROBE_CONCURRENCY = 4;
+
+/**
+ * Progressive import: placeholder cards land in the bin immediately, then
+ * fill in per file — metadata first, thumbnail behind it. Probing runs on a
+ * bounded worker pool so 300 files don't mean 300 sequential ffmpeg spawns.
+ * Resolves when everything settled, with the items that imported.
+ */
+export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
+  const state = useEditor.getState();
+  const present = new Set(state.media.filter((m) => m.status !== "error").map((m) => m.path));
+  const fresh = [...new Set(paths)].filter((p) => !present.has(p));
+  if (!fresh.length) return [];
+  state.beginImport(fresh);
+
+  const done: ImportedMedia[] = [];
+  let next = 0;
+  const worker = async () => {
+    while (next < fresh.length) {
+      const path = fresh[next++];
+      try {
+        const probed = await probeMedia(path);
+        useEditor.getState().finishImport(path, { info: probed.info });
+        const thumb = await mediaThumb(probed);
+        useEditor.getState().setThumb(path, thumb);
+        done.push({ ...probed, thumb });
+      } catch (e) {
+        console.error("import failed", path, e);
+        useEditor.getState().finishImport(path, { error: String(e) });
+      }
     }
-  }
-  return results;
+  };
+  const workers = Math.min(PROBE_CONCURRENCY, fresh.length);
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  return done;
 }
 
 export default function App() {
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatus | null>(null);
   const [exporting, setExporting] = useState(false);
-  const addMedia = useEditor((s) => s.addMedia);
   const mutate = useEditor((s) => s.mutate);
   const undo = useEditor((s) => s.undo);
   const redo = useEditor((s) => s.redo);
@@ -61,7 +84,7 @@ export default function App() {
         if (!path) return;
         const p = await loadProject(path);
         replaceProject(p, { path });
-        addMedia(await importPaths(projectMediaPaths(p)));
+        void importFiles(projectMediaPaths(p));
       })
       .catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,14 +92,13 @@ export default function App() {
 
   // OS file drops land in the media bin; audio also becomes a track offer.
   useEffect(() => {
-    const un = onFileDrop(async (paths) => {
-      const items = await importPaths(paths);
-      addMedia(items);
+    const un = onFileDrop((paths) => {
+      void importFiles(paths);
     });
     return () => {
       un.then((f) => f());
     };
-  }, [addMedia]);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -111,8 +133,7 @@ export default function App() {
       ],
     });
     if (!picked) return;
-    const items = await importPaths(Array.isArray(picked) ? picked : [picked]);
-    addMedia(items);
+    void importFiles(Array.isArray(picked) ? picked : [picked]);
   };
 
   const addAsSlide = (m: ImportedMedia) =>
