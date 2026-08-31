@@ -160,6 +160,12 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 .mode-toggle button { border-radius: 6px 0 0 6px; }
 .mode-toggle button + button { border-radius: 0 6px 6px 0; border-left: none; }
 .timeline-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.title-chip {
+  padding: 3px 9px; border: 1px dashed var(--line); border-radius: 6px;
+  color: var(--muted); font-size: 11px; font-weight: 600; cursor: grab;
+  user-select: none; -webkit-user-select: none; touch-action: none;
+}
+.title-chip:hover { border-color: var(--accent); color: var(--accent); }
 
 .arrange-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
