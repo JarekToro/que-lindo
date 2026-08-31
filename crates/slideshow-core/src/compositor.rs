@@ -296,19 +296,16 @@ fn blur_pass(src: &[u8], dst: &mut [u8], w: usize, h: usize, r: usize, horizonta
         }
     };
     let win = 2 * r + 1;
+    let clamp = |j: isize| -> usize { j.clamp(0, inner as isize - 1) as usize };
     for o in 0..outer {
+        // Clamp-to-edge window centered on i = 0: edge pixels enter with
+        // their full multiplicity, so the sliding removals below never
+        // subtract more than was added.
         let mut sums = [0u32; 4];
-        for i in 0..win.min(inner) {
-            let p = idx(o, i.min(inner - 1));
+        for j in -(r as isize)..=(r as isize) {
+            let p = idx(o, clamp(j));
             for c in 0..4 {
                 sums[c] += src[p + c] as u32;
-            }
-        }
-        // Pad the window when the row is narrower than it.
-        if win > inner {
-            let p = idx(o, inner - 1);
-            for c in 0..4 {
-                sums[c] += src[p + c] as u32 * (win - inner) as u32;
             }
         }
         for i in 0..inner {
@@ -316,12 +313,39 @@ fn blur_pass(src: &[u8], dst: &mut [u8], w: usize, h: usize, r: usize, horizonta
             for c in 0..4 {
                 dst[center + c] = (sums[c] / win as u32) as u8;
             }
-            let add = idx(o, (i + r + 1).min(inner - 1));
-            let sub = idx(o, i.saturating_sub(r));
+            let add = idx(o, clamp(i as isize + r as isize + 1));
+            let sub = idx(o, clamp(i as isize - r as isize));
             for c in 0..4 {
                 sums[c] += src[add + c] as u32;
                 sums[c] -= src[sub + c] as u32;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Bright edge pixels used to underflow the sliding window in debug
+    /// builds (panic: subtract with overflow) and smear garbage in release.
+    #[test]
+    fn box_blur_survives_bright_edges() {
+        let mut pm = Pixmap::new(64, 48).unwrap();
+        fill_all(&mut pm, Color::from_rgb(255, 255, 255));
+        box_blur(&mut pm, 9);
+        // A solid frame must stay solid after blurring.
+        for px in pm.pixels() {
+            let c = px.demultiply();
+            assert!(c.red() >= 250 && c.green() >= 250 && c.blue() >= 250);
+        }
+    }
+
+    /// Window wider than the row: every pixel clamps to the edge.
+    #[test]
+    fn box_blur_window_wider_than_image() {
+        let mut pm = Pixmap::new(5, 4).unwrap();
+        fill_all(&mut pm, Color::from_rgb(128, 128, 128));
+        box_blur(&mut pm, 16);
     }
 }
