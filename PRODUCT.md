@@ -98,9 +98,12 @@ Confirmed functionality (implemented today):
 Constraints and known limits:
 
 - **Out of scope for v1:** per-word karaoke text, beat sync, GPU compositing,
-  real-time full-resolution audio playback in preview, nested timelines.
-- The preview plays video only. Audio is heard in the exported file, not while
-  scrubbing.
+  nested timelines.
+- **Audio in preview is in scope for v1** (confirmed by the owner, superseding
+  the README's out-of-scope list). It is not implemented yet: today the preview
+  plays video only and audio is heard only in the exported file. An editing
+  surface that asks the user to make decisions about music must let them hear
+  it, so this is a requirement rather than an enhancement.
 - Bundled ffmpeg builds are GPL-licensed; attribution must survive distribution.
   The project's own code is MIT.
 
