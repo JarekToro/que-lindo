@@ -249,8 +249,22 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 }
 .shelf.drop-hot { outline: 1px solid var(--accent); outline-offset: -1px; }
-.slide-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.slide-card.selected { border-color: var(--accent); }
+.slide-card.selected.anchor { box-shadow: 0 0 0 1px var(--accent); }
 .slide-card:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+
+.context-menu {
+  position: fixed; z-index: 300; min-width: 200px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  padding: 5px; display: flex; flex-direction: column; gap: 1px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+.context-menu button {
+  text-align: left; background: transparent; border-color: transparent; border-radius: 5px;
+  padding: 5px 9px;
+}
+.context-menu button:hover:not(:disabled) { background: var(--panel); border-color: transparent; color: var(--accent); }
+.menu-sep { height: 1px; background: var(--line); margin: 4px 2px; }
 .slide-card.dragging { opacity: 0.4; }
 .slide-card.receiving { border-color: var(--accent); }
 .slide-card.insert-before { box-shadow: -4px 0 0 -1px var(--accent); }
