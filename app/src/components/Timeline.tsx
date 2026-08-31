@@ -95,7 +95,11 @@ function drawWaveform(
   }
 }
 
-type DropZone = { kind: "bind"; index: number } | { kind: "insert"; index: number };
+type DropZone =
+  | { kind: "bind"; index: number }
+  | { kind: "insert"; index: number }
+  | { kind: "band" }
+  | { kind: "band-member"; index: number };
 
 /** Thumbnail lookup for cells and shelf items. */
 function useThumbs(): Map<string, MediaItem> {
@@ -600,6 +604,31 @@ export default function Timeline({
     selectSlide(targetIdx, false);
   };
 
+  /** Move a member within its group (same kind only: photos order the
+   * collage, titles order the text stack). */
+  const reorderMember = (m: Member, targetMemberIdx: number) => {
+    if (openIdx < 0 || !openGroup) return;
+    const target = membersOf(openGroup)[targetMemberIdx];
+    if (!target || target.type !== m.type || target.index === m.index) return;
+    mutate((p) => ({
+      ...p,
+      slides: p.slides.map((s, i) => {
+        if (i !== openIdx) return s;
+        if (m.type === "cell") {
+          const cells = [...s.cells];
+          const [c] = cells.splice(m.index, 1);
+          cells.splice(target.index, 0, c);
+          return { ...s, cells };
+        }
+        const texts = [...s.texts];
+        const [t] = texts.splice(m.index, 1);
+        texts.splice(target.index, 0, t);
+        return { ...s, texts };
+      }),
+    }));
+    setMemberFocus(targetMemberIdx);
+  };
+
   /** Explode a group: every member — photo or title — becomes its own slide
    * in place; the first part inherits the slide's identity and timing. */
   const splitApart = (i: number) => {
@@ -743,8 +772,43 @@ export default function Timeline({
     overRef.current = { grid: overGrid, shelf: overShelf };
     setShelfHot(overShelf && payload.kind === "slide");
 
+    // The open band accepts drops: members join (or reorder inside) the group.
+    const bandEl = els.find(
+      (el): el is HTMLElement => el instanceof HTMLElement && el.classList.contains("group-band"),
+    );
+    if (bandEl && openGroup) {
+      if (payload.kind === "member") {
+        if (payload.slide !== openIdx) {
+          setDropBoth(null);
+          return;
+        }
+        const tile = els.find(
+          (el): el is HTMLElement =>
+            el instanceof HTMLElement && el.classList.contains("band-member"),
+        );
+        const j = tile ? Number(tile.dataset.mi) : NaN;
+        setDropBoth(Number.isNaN(j) ? null : { kind: "band-member", index: j });
+        return;
+      }
+      if (payload.kind === "slide") {
+        const src = slides[payload.index];
+        const fits =
+          payload.index !== openIdx &&
+          src &&
+          openGroup.cells.length + src.cells.length <= GROUP_MAX &&
+          membersOf(src).length > 0;
+        setDropBoth(fits ? { kind: "band" } : null);
+        return;
+      }
+      if (payload.kind === "media") {
+        setDropBoth(openGroup.cells.length < GROUP_MAX ? { kind: "band" } : null);
+        return;
+      }
+      setDropBoth({ kind: "band" }); // a title always fits
+      return;
+    }
     if (payload.kind === "member") {
-      // A member drop splits after its group wherever it lands; no target.
+      // A member drop outside its band splits it out after the group.
       setDropBoth(null);
       return;
     }
@@ -844,11 +908,18 @@ export default function Timeline({
 
     const p = st.payload;
     if (p.kind === "member") {
-      splitMember(p.slide, p.member);
+      if (zone?.kind === "band-member") reorderMember(p.member, zone.index);
+      else splitMember(p.slide, p.member);
       return;
     }
     if (p.kind === "text") {
       if (zone?.kind === "bind") addTitle(zone.index);
+      else if (zone?.kind === "band" && openIdx >= 0) addTitle(openIdx);
+      return;
+    }
+    if (zone?.kind === "band" && openIdx >= 0) {
+      if (p.kind === "slide") bind(openIdx, p.index);
+      else bindMedia(openIdx, p.path);
       return;
     }
     if (p.kind === "slide") {
@@ -961,10 +1032,11 @@ export default function Timeline({
   // ---- render ----
   const bandAt = openGroup ? Math.min((Math.floor(openIdx / cols) + 1) * cols, slides.length) : -1;
 
+  const bandHot = drop?.kind === "band" || drop?.kind === "band-member";
   const band = openGroup && (
     <div
       key="band"
-      className="group-band"
+      className={`group-band ${bandHot ? "receiving" : ""}`}
       ref={bandRef}
       tabIndex={0}
       role="group"
@@ -978,7 +1050,8 @@ export default function Timeline({
           return (
             <div
               key={`${m.type}-${m.index}`}
-              className={`band-member ${m.type === "text" ? "band-text" : ""} ${j === memberFocus ? "focused" : ""}`}
+              data-mi={j}
+              className={`band-member ${m.type === "text" ? "band-text" : ""} ${j === memberFocus ? "focused" : ""} ${drop?.kind === "band-member" && drop.index === j ? "reorder-target" : ""}`}
               onPointerDown={(e) => beginDrag(e, { kind: "member", slide: openIdx, member: m })}
               onPointerMove={moveDrag}
               onPointerUp={endDrag}
