@@ -1,10 +1,31 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { FfmpegStatus, ImportedMedia, Project, Timing } from "./types";
+import type { FfmpegStatus, ProbedMedia, Project, Timing } from "./types";
 
 export const checkFfmpeg = () => invoke<FfmpegStatus>("check_ffmpeg");
 export const startupProject = () => invoke<string | null>("startup_project");
-export const probeMedia = (path: string) => invoke<ImportedMedia>("probe_media", { path });
+export const probeMedia = (path: string) => invoke<ProbedMedia>("probe_media", { path });
+
+/**
+ * Thumbnail for a probed file as an object URL (PNG bytes over binary IPC —
+ * never base64). Returns null when the file has nothing to draw (audio) or
+ * the thumbnail fails; callers show a fallback. The caller owns the URL and
+ * must revoke it when the media leaves the app.
+ */
+export const mediaThumb = async (m: ProbedMedia): Promise<string | null> => {
+  if (!m.info.is_image && !m.info.has_video) return null;
+  try {
+    const buf = await invoke<ArrayBuffer>("media_thumb", {
+      path: m.path,
+      isImage: m.info.is_image,
+      duration: m.info.duration,
+    });
+    return URL.createObjectURL(new Blob([buf], { type: "image/png" }));
+  } catch (e) {
+    console.warn("thumbnail failed", m.path, e);
+    return null;
+  }
+};
 export const listFonts = () => invoke<string[]>("list_fonts");
 export const loadProject = (path: string) => invoke<Project>("load_project", { path });
 export const saveProject = (path: string, project: Project) =>
@@ -17,9 +38,29 @@ export const exportVideo = (project: Project, outPath: string, scale: number, cr
 export const setProjectBackend = (project: Project, rev: number) =>
   invoke<Timing>("set_project", { project, rev });
 
-/** Render a preview frame (same compositor as export); returns a data URL. */
-export const renderPreview = (time: number, scale: number) =>
-  invoke<string>("render_preview", { time, scale });
+/** A decoded preview frame, ready to blit into a canvas. */
+export interface PreviewFrame {
+  width: number;
+  height: number;
+  pixels: Uint8ClampedArray<ArrayBuffer>;
+}
+
+/**
+ * Render a preview frame (same compositor as export). Raw bytes over binary
+ * IPC: 8-byte header (width u32 LE, height u32 LE) + straight-alpha RGBA.
+ */
+export const renderPreview = async (time: number, scale: number): Promise<PreviewFrame> => {
+  const buf = await invoke<ArrayBuffer>("render_preview", { time, scale });
+  const view = new DataView(buf);
+  return {
+    width: view.getUint32(0, true),
+    height: view.getUint32(4, true),
+    pixels: new Uint8ClampedArray(buf, 8),
+  };
+};
+
+/** Backend answer for a queued frame request that a newer one replaced. */
+export const isSuperseded = (e: unknown): boolean => e === "superseded";
 
 export interface ExportProgress {
   done: number;

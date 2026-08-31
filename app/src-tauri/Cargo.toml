@@ -23,7 +23,6 @@ serde_json.workspace = true
 anyhow.workspace = true
 log.workspace = true
 env_logger = "0.11"
-base64 = "0.22"
 image.workspace = true
 
 [features]
