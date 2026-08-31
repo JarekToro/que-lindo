@@ -47,41 +47,50 @@ function fmtClock(t: number): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-/** Min/max peaks of the mix drawn into the lane canvas. */
-function drawWaveform(canvas: HTMLCanvasElement, buffer: AudioBuffer | null, cssWidth: number) {
-  const w = Math.max(1, Math.min(Math.round(cssWidth), 8192));
-  const h = 56;
-  canvas.width = w;
-  canvas.height = h;
+/** Min/max peaks of the mix drawn into the lane canvas. `vertical` runs the
+ * time axis top-to-bottom (side-docked timeline). */
+function drawWaveform(
+  canvas: HTMLCanvasElement,
+  buffer: AudioBuffer | null,
+  cssLength: number,
+  vertical: boolean,
+) {
+  const len = Math.max(1, Math.min(Math.round(cssLength), 8192));
+  const thick = 56;
+  canvas.width = vertical ? thick : len;
+  canvas.height = vertical ? len : thick;
   const g = canvas.getContext("2d");
   if (!g) return;
-  g.clearRect(0, 0, w, h);
+  g.clearRect(0, 0, canvas.width, canvas.height);
   if (!buffer) return;
   const data = buffer.getChannelData(0);
-  const step = data.length / w;
+  const step = data.length / len;
   g.fillStyle = "rgba(212, 175, 110, 0.55)";
-  const mid = h / 2;
-  for (let x = 0; x < w; x++) {
+  const mid = thick / 2;
+  for (let pos = 0; pos < len; pos++) {
     let min = 0;
     let max = 0;
-    const from = Math.floor(x * step);
-    const to = Math.min(Math.floor((x + 1) * step), data.length);
+    const from = Math.floor(pos * step);
+    const to = Math.min(Math.floor((pos + 1) * step), data.length);
     for (let i = from; i < to; i += 4) {
       const v = data[i];
       if (v < min) min = v;
       if (v > max) max = v;
     }
-    const top = mid + min * mid;
-    const bottom = mid + max * mid;
-    g.fillRect(x, top, 1, Math.max(bottom - top, 1));
+    const lo = mid + min * mid;
+    const span = Math.max((max - min) * mid, 1);
+    if (vertical) g.fillRect(lo, pos, span, 1);
+    else g.fillRect(pos, lo, 1, span);
   }
 }
 
 type DropZone = { kind: "bind"; index: number } | { kind: "insert"; index: number };
 
-function zoneForCard(e: React.DragEvent, index: number, el: HTMLElement): DropZone {
+function zoneForCard(e: React.DragEvent, index: number, el: HTMLElement, vertical: boolean): DropZone {
   const r = el.getBoundingClientRect();
-  const frac = (e.clientX - r.left) / Math.max(r.width, 1);
+  const frac = vertical
+    ? (e.clientY - r.top) / Math.max(r.height, 1)
+    : (e.clientX - r.left) / Math.max(r.width, 1);
   if (frac < 0.25) return { kind: "insert", index };
   if (frac > 0.75) return { kind: "insert", index: index + 1 };
   return { kind: "bind", index };
@@ -113,11 +122,15 @@ function SlideThumb({
   thumbs,
   aspect,
   receiving = false,
+  fill = false,
 }: {
   slide: Slide;
   thumbs: Map<string, MediaItem>;
   aspect: number;
   receiving?: boolean;
+  /** Fill the parent box instead of imposing an aspect ratio (the box's own
+   * proportions should then match `aspect`). */
+  fill?: boolean;
 }) {
   const n = slide.cells.length + (receiving ? 1 : 0);
   const layout = receiving ? autoLayout(n) : slide.layout;
@@ -128,7 +141,10 @@ function SlideThumb({
   const title = slide.texts.find((t) => t.text.trim());
 
   return (
-    <div className="slide-thumb" style={{ aspectRatio: `${aspect}` }}>
+    <div
+      className="slide-thumb"
+      style={fill ? { width: "100%", height: "100%" } : { aspectRatio: `${aspect}` }}
+    >
       {slide.cells.map((cell, i) => {
         const r = rects[i];
         if (!r) return null;
@@ -180,7 +196,11 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
   const playing = useEditor((s) => s.playing);
   const setPlaying = useEditor((s) => s.setPlaying);
   const rev = useEditor((s) => s.rev);
+  const dock = useEditor((s) => s.ui.dock);
+  const setUi = useEditor((s) => s.setUi);
   const thumbs = useThumbs();
+  /** Side-docked Time mode runs the clock top-to-bottom. */
+  const vertical = mode === "time" && dock !== "bottom";
 
   const slides = project.slides;
   const aspect = project.settings.width / Math.max(project.settings.height, 1);
@@ -191,6 +211,7 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
   const [dragging, setDragging] = useState<number | null>(null);
   const [shelfOpen, setShelfOpen] = useState(true);
   const [cols, setCols] = useState(6);
+  const [panelW, setPanelW] = useState(280);
 
   const gridRef = useRef<HTMLDivElement | null>(null);
   const bandRef = useRef<HTMLDivElement | null>(null);
@@ -209,6 +230,7 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
     const el = gridRef.current;
     if (!el) return;
     const measure = () => {
+      setPanelW(el.clientWidth);
       const cards = [...el.querySelectorAll<HTMLElement>(".slide-card")];
       if (cards.length < 2) return;
       const top = cards[0].offsetTop;
@@ -302,22 +324,23 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
       .then((buffer) => {
         if (dead) return;
         setHasMix(!!buffer);
-        if (laneRef.current) drawWaveform(laneRef.current, buffer, contentW);
+        if (laneRef.current) drawWaveform(laneRef.current, buffer, contentW, vertical);
       })
       .catch(() => setHasMix(false));
     return () => {
       dead = true;
     };
-  }, [mode, rev, contentW]);
+  }, [mode, rev, contentW, vertical]);
 
   // Scrubbing on the ruler: proportional position is the playhead.
   const stripRef = useRef<HTMLDivElement | null>(null);
   const seekAt = useCallback(
     (e: React.PointerEvent) => {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setTime(Math.max(0, (e.clientX - rect.left) / PX_PER_SEC));
+      const pos = vertical ? e.clientY - rect.top : e.clientX - rect.left;
+      setTime(Math.max(0, pos / PX_PER_SEC));
     },
-    [setTime],
+    [setTime, vertical],
   );
 
   // Playback keeps the playhead in view.
@@ -326,10 +349,14 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
     const strip = stripRef.current;
     if (!strip) return;
     const x = time * PX_PER_SEC;
-    if (x < strip.scrollLeft + 40 || x > strip.scrollLeft + strip.clientWidth - 80) {
+    if (vertical) {
+      if (x < strip.scrollTop + 40 || x > strip.scrollTop + strip.clientHeight - 80) {
+        strip.scrollTop = Math.max(0, x - strip.clientHeight * 0.3);
+      }
+    } else if (x < strip.scrollLeft + 40 || x > strip.scrollLeft + strip.clientWidth - 80) {
       strip.scrollLeft = Math.max(0, x - strip.clientWidth * 0.3);
     }
-  }, [time, playing, mode]);
+  }, [time, playing, mode, vertical]);
 
   // ---- the "Not used" shelf: imported media the film doesn't reference ----
   const usedPaths = useMemo(() => {
@@ -455,7 +482,7 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
     if (!types.includes(SLIDE_MIME) && !types.includes(MEDIA_MIME)) return;
     e.preventDefault();
     e.stopPropagation();
-    const zone = zoneForCard(e, i, e.currentTarget as HTMLElement);
+    const zone = zoneForCard(e, i, e.currentTarget as HTMLElement, vertical);
     // A bind that would overfill the group falls back to inserting beside.
     if (zone.kind === "bind") {
       const room = slides[i].cells.length < GROUP_MAX && dragging !== i;
@@ -628,7 +655,13 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
     const insertBefore = drop?.kind === "insert" && drop.index === i;
     const insertAfter = drop?.kind === "insert" && drop.index === i + 1;
     const proportional = mode === "time";
-    const cardAspect = proportional ? Math.max(widths[i] - 8, 24) / TIME_THUMB_H : aspect;
+    // In the vertical strip the card is (panel − ruler − lane − padding) wide
+    // and duration tall; the thumb's rect math needs that real box shape.
+    const cardAspect = !proportional
+      ? aspect
+      : vertical
+        ? Math.max(panelW - 84, 60) / Math.max(widths[i] - 8, 24)
+        : Math.max(widths[i] - 8, 24) / TIME_THUMB_H;
     const firstText = s.texts.find((t) => t.text.trim());
     return (
       <div
@@ -646,7 +679,7 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
           dragging === i ? "dragging" : "",
           proportional ? "proportional" : "",
         ].join(" ")}
-        style={proportional ? { width: widths[i] } : undefined}
+        style={proportional ? (vertical ? { height: widths[i] } : { width: widths[i] }) : undefined}
         tabIndex={i === selected ? 0 : -1}
         role="option"
         aria-selected={i === selected}
@@ -671,7 +704,13 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
           }
         }}
       >
-        <SlideThumb slide={s} thumbs={thumbs} aspect={cardAspect} receiving={isReceiving} />
+        <SlideThumb
+          slide={s}
+          thumbs={thumbs}
+          aspect={cardAspect}
+          receiving={isReceiving}
+          fill={proportional && vertical}
+        />
         {s.cells.length > 1 && <span className="card-count">{s.cells.length}</span>}
         <span className="card-index">{i + 1}</span>
         {proportional && <span className="card-duration">{s.duration.toFixed(1)}s</span>}
@@ -726,6 +765,24 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
           >
             Not used ({unused.length})
           </button>
+          <div className="dock-toggle" role="group" aria-label="Timeline position">
+            {(["left", "bottom", "right"] as const).map((d) => (
+              <button
+                key={d}
+                className={dock === d ? "on" : ""}
+                aria-pressed={dock === d}
+                title={`Dock timeline ${d === "bottom" ? "at the bottom" : `on the ${d}`}`}
+                onClick={() => setUi({ dock: d })}
+              >
+                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                  <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" />
+                  {d === "left" && <rect x="1.5" y="1.5" width="3.5" height="9" fill="currentColor" />}
+                  {d === "bottom" && <rect x="1.5" y="7" width="9" height="3.5" fill="currentColor" />}
+                  {d === "right" && <rect x="7" y="1.5" width="3.5" height="9" fill="currentColor" />}
+                </svg>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -755,9 +812,9 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
             gridRef.current = el;
             stripRef.current = el;
           }}
-          className="time-strip"
+          className={`time-strip ${vertical ? "vertical" : ""}`}
           role="listbox"
-          aria-label="Slides on the clock — card width is duration"
+          aria-label={`Slides on the clock — card ${vertical ? "height" : "width"} is duration`}
           onKeyDown={gridKeys}
           onDragOver={(e) => {
             if (e.dataTransfer.types.includes(SLIDE_MIME) || e.dataTransfer.types.includes(MEDIA_MIME))
@@ -765,7 +822,10 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
           }}
           onDrop={handleGridDrop}
         >
-          <div className="time-content" style={{ width: contentW }}>
+          <div
+            className="time-content"
+            style={vertical ? { height: contentW } : { width: contentW }}
+          >
             <div
               className="time-ruler"
               onPointerDown={(e) => {
@@ -778,15 +838,23 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
               }}
             >
               {Array.from({ length: Math.floor(total / 10) + 1 }, (_, k) => (
-                <span key={k} className="ruler-tick" style={{ left: k * 10 * PX_PER_SEC }}>
+                <span
+                  key={k}
+                  className="ruler-tick"
+                  style={vertical ? { top: k * 10 * PX_PER_SEC } : { left: k * 10 * PX_PER_SEC }}
+                >
                   {fmtClock(k * 10)}
                 </span>
               ))}
             </div>
             <div className="time-row">{cards}</div>
             <div className="audio-lane">
-              <canvas ref={laneRef} aria-label="Music waveform" style={{ width: contentW }} />
-              {!hasMix && (
+              <canvas
+                ref={laneRef}
+                aria-label="Music waveform"
+                style={vertical ? { height: contentW } : { width: contentW }}
+              />
+              {!hasMix && !vertical && (
                 <span className="hint lane-hint">No music yet — add a track from “Not used”.</span>
               )}
             </div>
@@ -797,7 +865,7 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
                   <button
                     key={`seam-${s.id}`}
                     className="seam-marker"
-                    style={{ left: lefts[i] }}
+                    style={vertical ? { top: lefts[i] } : { left: lefts[i] }}
                     title={`${TRANSITION_NAMES[s.transition.kind.type] ?? "Transition"} · ${s.transition.duration.toFixed(1)}s`}
                     onClick={() => selectSlide(i)}
                   >
@@ -807,7 +875,11 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
                   </button>
                 ),
             )}
-            <div className="playhead" style={{ left: time * PX_PER_SEC }} aria-hidden="true" />
+            <div
+              className="playhead"
+              style={vertical ? { top: time * PX_PER_SEC } : { left: time * PX_PER_SEC }}
+              aria-hidden="true"
+            />
           </div>
         </div>
       )}
