@@ -1,4 +1,5 @@
 :root {
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
   --bg: #17171c;
   --panel: #1f1f26;
   --panel-2: #26262e;
@@ -95,10 +96,70 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 }
 .inspector details { border-bottom: 1px solid var(--line); padding: 4px 0 10px; }
 .inspector summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
-.inspector details.values { border-bottom: none; }
+.inspector details.values { border-bottom: 1px solid var(--line); padding: 4px 0 12px; }
 .inspector details.values > summary { color: var(--muted); }
-.inspector details.values[open] > summary { color: var(--text); }
-.inspector details.values > details { margin-left: 2px; }
+.inspector details.values[open] > summary { color: var(--text); margin-bottom: 4px; }
+.values-scope { color: var(--muted); font-weight: 400; font-size: 11px; }
+
+/* Values pane: quiet precision rows on a 28px rhythm. */
+.vgroup { margin: 0 0 14px; }
+.vgroup-label {
+  display: block; font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--muted); margin: 0 0 8px;
+}
+.vrow {
+  display: grid; grid-template-columns: 84px 1fr auto; align-items: center;
+  gap: 6px; min-height: 28px; margin: 0;
+}
+.vlabel { color: var(--muted); font-size: 12px; }
+.vrow > select, .vrow > input[type="text"], .vrow > input:not([type]) { grid-column: 2 / -1; max-width: none; }
+.vrow input[type="range"] { max-width: none; width: 100%; }
+.num-unit { position: relative; grid-column: 3; display: inline-flex; align-items: center; }
+.num-unit input {
+  width: 74px; text-align: right; padding-right: 26px;
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  appearance: textfield; -webkit-appearance: textfield;
+}
+.num-unit input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.num-unit .unit {
+  position: absolute; right: 8px; color: var(--muted); font-size: 11px; pointer-events: none;
+}
+.num-unit.readout input { width: 66px; }
+.vrow:has(> .num-unit:only-of-type):not(:has(input[type="range"])) .num-unit { grid-column: 3; }
+.vecho { grid-column: 2 / -1; color: var(--muted); font-size: 12px; }
+
+.segmented { grid-column: 2 / -1; display: inline-flex; justify-self: start; }
+.segmented button { border-radius: 0; padding: 3px 9px; }
+.segmented button + button { border-left: none; }
+.segmented button:first-child { border-radius: 6px 0 0 6px; }
+.segmented button:last-child { border-radius: 0 6px 6px 0; }
+
+.color-field { grid-column: 2 / -1; display: inline-flex; align-items: center; gap: 8px; }
+.color-field .hex { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+.member-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+.member-chip {
+  position: relative; flex-shrink: 0; border: 2px solid transparent; border-radius: 6px;
+}
+.member-chip.on { border-color: var(--accent); }
+.member-chip .chip-body {
+  display: flex; align-items: center; gap: 4px; padding: 0; border: 1px solid var(--line);
+  border-radius: 4px; overflow: hidden; background: #000; height: 33px; min-width: 44px; max-width: 110px;
+}
+.member-chip img { width: 44px; height: 33px; object-fit: cover; display: block; }
+.member-chip.text .chip-body { background: var(--panel-2); padding: 0 8px; }
+.chip-t {
+  width: 16px; height: 16px; border-radius: 50%; background: var(--accent); color: var(--accent-ink);
+  font-size: 10px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.chip-label { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.member-chip .chip-x {
+  position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; padding: 0;
+  border-radius: 50%; font-size: 9px; display: none; align-items: center; justify-content: center;
+  background: var(--panel); z-index: 2;
+}
+.member-chip:hover .chip-x { display: flex; }
 
 /* The outcome panel: a few verbs for the current selection. */
 .outcome { padding: 4px 0 12px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
