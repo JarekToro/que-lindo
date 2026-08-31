@@ -55,6 +55,27 @@ impl Project {
         serde_json::to_string_pretty(self).expect("project serializes")
     }
 
+    /// Rewrite relative media paths against `base` (usually the project
+    /// file's directory) so a project folder can be moved around.
+    pub fn resolve_paths(&mut self, base: &std::path::Path) {
+        let fix = |p: &mut PathBuf| {
+            if p.is_relative() {
+                *p = base.join(&*p);
+            }
+        };
+        for s in &mut self.slides {
+            for c in &mut s.cells {
+                match &mut c.source {
+                    MediaSource::Image { path } | MediaSource::Video { path, .. } => fix(path),
+                    MediaSource::Solid { .. } => {}
+                }
+            }
+        }
+        for a in &mut self.audio {
+            fix(&mut a.path);
+        }
+    }
+
     /// All file paths referenced by the project (media + audio).
     pub fn referenced_paths(&self) -> Vec<&PathBuf> {
         let mut out = Vec::new();
