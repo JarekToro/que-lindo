@@ -25,7 +25,7 @@ detect_triple() {
 }
 
 TRIPLE="${1:-$(detect_triple)}"
-echo "fetching ffmpeg for $TRIPLE → $DEST"
+echo "fetching ffmpeg for $TRIPLE -> $DEST"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
@@ -33,7 +33,7 @@ fetch_macos() {
   # evermeet.cx serves per-tool zips of static universal-ish builds (x86_64;
   # they run on Apple Silicon via Rosetta, or natively when marked arm64).
   for tool in ffmpeg ffprobe; do
-    echo "  downloading $tool…"
+    echo "  downloading $tool ..."
     curl -fL --retry 3 "https://evermeet.cx/ffmpeg/getrelease/$tool/zip" -o "$TMP/$tool.zip"
     unzip -oq "$TMP/$tool.zip" -d "$TMP"
     install -m 755 "$TMP/$tool" "$DEST/$tool-$TRIPLE"
@@ -41,7 +41,7 @@ fetch_macos() {
 }
 
 fetch_linux() {
-  echo "  downloading johnvansickle static build…"
+  echo "  downloading johnvansickle static build ..."
   curl -fL --retry 3 "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" -o "$TMP/ffmpeg.tar.xz"
   tar -xJf "$TMP/ffmpeg.tar.xz" -C "$TMP"
   local dir
@@ -56,7 +56,15 @@ case "$TRIPLE" in
   *) echo "unknown triple $TRIPLE" >&2; exit 1 ;;
 esac
 
+# Verify the sidecars actually landed (a silent partial fetch must fail CI).
+for tool in ffmpeg ffprobe; do
+  if [ ! -x "$DEST/$tool-$TRIPLE" ]; then
+    echo "error: $DEST/$tool-$TRIPLE was not created" >&2
+    exit 1
+  fi
+done
+
 echo "done:"
 ls -la "$DEST"
 echo
-echo "note: bundled ffmpeg builds are GPL-licensed — keep the attribution if you distribute the app."
+echo "note: bundled ffmpeg builds are GPL-licensed - keep the attribution if you distribute the app."
