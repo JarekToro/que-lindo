@@ -116,6 +116,16 @@ export default function App() {
     };
   }, []);
 
+  // Self-healing thumbnails: whatever path a project arrived by (Open, the
+  // command line, crash recovery), any referenced media the bin doesn't know
+  // yet gets probed and thumbed. importFiles no-ops when nothing is missing.
+  const project = useEditor((s) => s.project);
+  useEffect(() => {
+    const known = new Set(useEditor.getState().media.map((m) => m.path));
+    const missing = projectMediaPaths(project).filter((p) => !known.has(p));
+    if (missing.length) void importFiles(missing);
+  }, [project]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
