@@ -880,6 +880,71 @@ export default function Timeline({
     selectText(s.texts.length);
   };
 
+  // Holding a drag near a scrollable edge auto-scrolls, speed ramping
+  // quadratically as the pointer nears the edge. Interval-driven: a held
+  // pointer emits no move events, and this webview suspends rAF whenever the
+  // window isn't key, which would freeze the loop mid-drag.
+  const autoScrollTimer = useRef<number | null>(null);
+  const lastPoint = useRef({ x: 0, y: 0 });
+  /** Sub-pixel speeds accumulate here — scrollTop truncates fractions. */
+  const scrollCarry = useRef({ x: 0, y: 0 });
+  // The tick lives across renders; always call the latest target logic.
+  const updateTargetRef = useRef(updateDragTarget);
+  updateTargetRef.current = updateDragTarget;
+
+  const stopAutoScroll = useCallback(() => {
+    if (autoScrollTimer.current !== null) {
+      window.clearInterval(autoScrollTimer.current);
+      autoScrollTimer.current = null;
+    }
+  }, []);
+
+  const autoScrollTick = useCallback(() => {
+    if (!dragStart.current) {
+      stopAutoScroll();
+      return;
+    }
+    const el = gridRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const T = 56; // the edge zone, px
+    const MAX = 16; // px per tick at the very edge
+    const { x, y } = lastPoint.current;
+    const ramp = (dist: number) => {
+      const p = Math.max(0, Math.min(1, 1 - dist / T));
+      return p * p;
+    };
+    let sx = 0;
+    let sy = 0;
+    const inX = x > r.left - 40 && x < r.right + 40;
+    const inY = y > r.top - 40 && y < r.bottom + 40;
+    if (inX) {
+      if (y < r.top + T && y > r.top - 40) sy = -MAX * ramp(y - r.top);
+      else if (y > r.bottom - T && y < r.bottom + 40) sy = MAX * ramp(r.bottom - y);
+    }
+    if (inY) {
+      if (x < r.left + T && x > r.left - 40) sx = -MAX * ramp(x - r.left);
+      else if (x > r.right - T && x < r.right + 40) sx = MAX * ramp(r.right - x);
+    }
+    const carry = scrollCarry.current;
+    carry.x += sx;
+    carry.y += sy;
+    const ix = Math.trunc(carry.x);
+    const iy = Math.trunc(carry.y);
+    if (iy) {
+      el.scrollTop += iy;
+      carry.y -= iy;
+    }
+    if (ix) {
+      el.scrollLeft += ix;
+      carry.x -= ix;
+    }
+    // Content moved under the pointer — retarget the drop.
+    if ((ix || iy) && dragStart.current) updateTargetRef.current(x, y, dragStart.current.payload);
+  }, [stopAutoScroll]);
+
+  useEffect(() => stopAutoScroll, [stopAutoScroll]);
+
   const moveDrag = (e: React.PointerEvent) => {
     const st = dragStart.current;
     if (!st) return;
@@ -890,6 +955,11 @@ export default function Timeline({
       p.kind === "media" ||
       (p.kind === "slide" && (slides[p.index]?.cells.length ?? 0) > 0) ||
       (p.kind === "member" && p.member.type === "cell");
+    lastPoint.current = { x: e.clientX, y: e.clientY };
+    if (autoScrollTimer.current === null) {
+      scrollCarry.current = { x: 0, y: 0 };
+      autoScrollTimer.current = window.setInterval(autoScrollTick, 16);
+    }
     setGhost({ x: e.clientX, y: e.clientY, label: dragLabel(p), kind: p.kind, carriesCells });
     updateDragTarget(e.clientX, e.clientY, p);
   };
@@ -900,6 +970,7 @@ export default function Timeline({
     const zone = dropRef.current;
     const over = overRef.current;
     dragStart.current = null;
+    stopAutoScroll();
     setGhost(null);
     setDragging(null);
     setDropBoth(null);
