@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Downloads static ffmpeg + ffprobe builds into app/src-tauri/binaries/ with
+# the target-triple names Tauri expects for sidecar bundling.
+#
+# Usage: scripts/fetch-ffmpeg.sh [target-triple]
+#   default target: this machine's
+set -euo pipefail
+cd "$(dirname "$0")/.."
+DEST="app/src-tauri/binaries"
+mkdir -p "$DEST"
+
+detect_triple() {
+  local os arch
+  os=$(uname -s)
+  arch=$(uname -m)
+  case "$os" in
+    Darwin)
+      case "$arch" in
+        arm64) echo "aarch64-apple-darwin" ;;
+        *) echo "x86_64-apple-darwin" ;;
+      esac ;;
+    Linux) echo "x86_64-unknown-linux-gnu" ;;
+    *) echo "unsupported OS $os (use fetch-ffmpeg.ps1 on Windows)" >&2; exit 1 ;;
+  esac
+}
+
+TRIPLE="${1:-$(detect_triple)}"
+echo "fetching ffmpeg for $TRIPLE → $DEST"
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+fetch_macos() {
+  # evermeet.cx serves per-tool zips of static universal-ish builds (x86_64;
+  # they run on Apple Silicon via Rosetta, or natively when marked arm64).
+  for tool in ffmpeg ffprobe; do
+    echo "  downloading $tool…"
+    curl -fL --retry 3 "https://evermeet.cx/ffmpeg/getrelease/$tool/zip" -o "$TMP/$tool.zip"
+    unzip -oq "$TMP/$tool.zip" -d "$TMP"
+    install -m 755 "$TMP/$tool" "$DEST/$tool-$TRIPLE"
+  done
+}
+
+fetch_linux() {
+  echo "  downloading johnvansickle static build…"
+  curl -fL --retry 3 "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" -o "$TMP/ffmpeg.tar.xz"
+  tar -xJf "$TMP/ffmpeg.tar.xz" -C "$TMP"
+  local dir
+  dir=$(find "$TMP" -maxdepth 1 -type d -name "ffmpeg-*" | head -1)
+  install -m 755 "$dir/ffmpeg" "$DEST/ffmpeg-$TRIPLE"
+  install -m 755 "$dir/ffprobe" "$DEST/ffprobe-$TRIPLE"
+}
+
+case "$TRIPLE" in
+  *apple-darwin) fetch_macos ;;
+  *linux*) fetch_linux ;;
+  *) echo "unknown triple $TRIPLE" >&2; exit 1 ;;
+esac
+
+echo "done:"
+ls -la "$DEST"
+echo
+echo "note: bundled ffmpeg builds are GPL-licensed — keep the attribution if you distribute the app."
