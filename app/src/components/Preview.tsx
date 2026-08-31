@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { isSuperseded, renderPreview } from "../api";
 import { ensureAudioCtx, mixForRev } from "../mixcache";
+import { ANCHOR_POINTS } from "../presets";
 import { slideAt, useEditor } from "../store";
+import type { TextOverlay } from "../types";
 
 const PLAYBACK_FPS = 12;
 
@@ -14,6 +16,8 @@ export default function Preview() {
   const playing = useEditor((s) => s.playing);
   const setPlaying = useEditor((s) => s.setPlaying);
   const selectSlide = useEditor((s) => s.selectSlide);
+  const selectedText = useEditor((s) => s.selectedText);
+  const selectText = useEditor((s) => s.selectText);
   const project = useEditor((s) => s.project);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -138,10 +142,111 @@ export default function Preview() {
     return `${m}:${s}`;
   };
 
+  // ---- text placement on the frame: drag a handle, the offset follows ----
+  const shownSlide = project.slides[currentSlide];
+  const textDrag = useRef<{
+    ti: number;
+    startX: number;
+    startY: number;
+    offset: [number, number];
+    moved: boolean;
+  } | null>(null);
+
+  const mutateStore = useEditor((s) => s.mutate);
+  const patchTextOffset = (ti: number, offset: [number, number], history: boolean) => {
+    mutateStore(
+      (p) => ({
+        ...p,
+        slides: p.slides.map((s, i) =>
+          i === currentSlide
+            ? { ...s, texts: s.texts.map((t, j) => (j === ti ? { ...t, offset } : t)) }
+            : s,
+        ),
+      }),
+      { history },
+    );
+  };
+
+  const handleFor = (t: TextOverlay): { left: string; top: string; tx: string; ty: string } => {
+    const [ax, ay] = ANCHOR_POINTS[t.anchor] ?? [0.5, 0.5];
+    const fx = Math.min(Math.max(ax + t.offset[0], 0), 1);
+    const fy = Math.min(Math.max(ay + t.offset[1], 0), 1);
+    return {
+      left: `${fx * 100}%`,
+      top: `${fy * 100}%`,
+      tx: `${-ax * 100}%`,
+      ty: `${-ay * 100}%`,
+    };
+  };
+
+  const beginTextDrag = (e: React.PointerEvent, ti: number) => {
+    if (e.button !== 0 || !shownSlide) return;
+    e.stopPropagation();
+    selectSlide(currentSlide, false);
+    selectText(ti);
+    textDrag.current = {
+      ti,
+      startX: e.clientX,
+      startY: e.clientY,
+      offset: [...shownSlide.texts[ti].offset] as [number, number],
+      moved: false,
+    };
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // Synthetic pointers have no capturable id; moves still bubble here.
+    }
+  };
+
+  const moveTextDrag = (e: React.PointerEvent) => {
+    const d = textDrag.current;
+    const frame = overlayRef.current;
+    if (!d || !frame || !(e.buttons & 1)) return;
+    const r = frame.getBoundingClientRect();
+    const dx = (e.clientX - d.startX) / Math.max(r.width, 1);
+    const dy = (e.clientY - d.startY) / Math.max(r.height, 1);
+    // First movement takes the undo snapshot; the rest of the drag coalesces.
+    patchTextOffset(d.ti, [d.offset[0] + dx, d.offset[1] + dy], !d.moved);
+    d.moved = true;
+  };
+
+  const endTextDrag = () => {
+    textDrag.current = null;
+  };
+
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+
   return (
     <main className="preview">
       <div className="preview-stage">
-        <canvas ref={canvasRef} aria-label="preview" hidden={!hasFrame} />
+        <div className="frame-wrap">
+          <canvas ref={canvasRef} aria-label="preview" hidden={!hasFrame} />
+          {hasFrame && !playing && shownSlide && shownSlide.texts.length > 0 && (
+            <div className="text-layer" ref={overlayRef}>
+              {shownSlide.texts.map((t, ti) => {
+                const pos = handleFor(t);
+                const active = selectedText === ti && currentSlide === useEditor.getState().selectedSlide;
+                return (
+                  <button
+                    key={ti}
+                    className={`text-handle ${active ? "active" : ""}`}
+                    style={{
+                      left: pos.left,
+                      top: pos.top,
+                      transform: `translate(${pos.tx}, ${pos.ty})`,
+                    }}
+                    title="Drag to place; click to edit in the panel"
+                    onPointerDown={(e) => beginTextDrag(e, ti)}
+                    onPointerMove={moveTextDrag}
+                    onPointerUp={endTextDrag}
+                  >
+                    T
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
         {!hasFrame && <div className="hint">No preview yet</div>}
       </div>
       <div className="transport">

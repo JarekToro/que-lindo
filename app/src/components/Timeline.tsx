@@ -7,6 +7,7 @@ import {
   autoLayout,
   bindSlides,
   defaultSlide,
+  defaultText,
   dissolveGroup,
   freshId,
   GROUP_MAX,
@@ -628,6 +629,27 @@ export default function Timeline({
         entries.push({ label: `Split into ${s.cells.length} slides`, onPick: () => splitApart(i) });
         entries.push("sep");
       }
+      entries.push({
+        label: "Add title on this slide",
+        onPick: () => {
+          const text = defaultText({
+            text: "Title",
+            role: "title",
+            size: 0.08,
+            anchor: "center",
+            offset: [0, 0],
+            fade: 0.6,
+          });
+          mutate((p) => ({
+            ...p,
+            slides: p.slides.map((sl, j) => (j === i ? { ...sl, texts: [...sl.texts, text] } : sl)),
+          }));
+          // Seek so the frame shows the slide being titled — the drag handle
+          // on the frame edits what the frame displays.
+          selectSlide(i, true);
+          selectText(s.texts.length);
+        },
+      });
       entries.push({ label: "Duplicate", onPick: () => duplicate(i) });
       entries.push({ label: "Add blank slide after", onPick: () => insertSlides(i + 1, [defaultSlide()]) });
       entries.push("sep");
@@ -728,7 +750,11 @@ export default function Timeline({
     if (e.button !== 0) return;
     if ((e.target as HTMLElement).closest("button, input")) return;
     dragStart.current = { payload, x: e.clientX, y: e.clientY };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // Synthetic pointers have no capturable id; moves still bubble here.
+    }
   };
 
   const moveDrag = (e: React.PointerEvent) => {

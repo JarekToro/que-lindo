@@ -323,6 +323,14 @@ export const useEditor = create<EditorState>((set, get) => ({
 // empty backend (it would retry for seconds, then give up until an edit).
 scheduleSync(useEditor.getState, useEditor.setState);
 
+declare global {
+  interface Window {
+    /** The live store, for dev tooling (MCP bridge) and crash recovery. */
+    __editorStore?: typeof useEditor;
+  }
+}
+window.__editorStore = useEditor;
+
 /** Current slide index for a timeline position. */
 export function slideAt(timing: Timing | null, t: number): number {
   if (!timing) return 0;
