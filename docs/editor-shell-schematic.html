@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>One frame, two modes — layout schematic</title>
+<style>
+  :root{
+    --bg:#17171c; --panel:#1f1f26; --panel-2:#26262e; --line:#33333d;
+    --text:#e8e8ec; --muted:#9a9aa6; --accent:#d4af6e; --accent-ink:#201a10;
+    --danger:#e0705f;
+    --ghost:#2c2c36;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,"Segoe UI",system-ui,sans-serif; font-size:13px;
+    padding:28px 24px 60px;
+  }
+  .wrap{max-width:1560px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px;font-weight:700}
+  h1 em{color:var(--accent);font-style:normal}
+  .sub{color:var(--muted);margin:0 0 4px;max-width:78ch;line-height:1.5}
+  .seed{color:var(--muted);font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin:0 0 24px}
+  .note{
+    border-left:2px solid var(--accent); padding:8px 0 8px 12px; margin:0 0 26px;
+    color:var(--muted); max-width:88ch; line-height:1.55;
+  }
+  .note b{color:var(--text);font-weight:600}
+
+  .modes{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+  @media (max-width:1180px){.modes{grid-template-columns:1fr}}
+
+  .mode-head{display:flex;align-items:baseline;gap:10px;margin:0 0 8px}
+  .mode-name{font-size:15px;font-weight:700;letter-spacing:.02em}
+  .mode-what{color:var(--muted);font-size:12px}
+
+  /* --- window chrome, 1480x920 proportions --- */
+  .win{
+    background:var(--bg); border:1px solid var(--line); border-radius:8px;
+    overflow:hidden; aspect-ratio:1480/920; display:flex; flex-direction:column;
+    position:relative; container-type:inline-size;
+  }
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:7px 10px;background:var(--panel);border-bottom:1px solid var(--line);
+    flex:0 0 auto;
+  }
+  .tgroup{display:flex;align-items:center;gap:6px}
+  .brand{color:var(--accent);font-weight:700;font-size:12px}
+  .btn{
+    background:var(--panel-2);border:1px solid var(--line);border-radius:5px;
+    padding:3px 8px;font-size:10.5px;color:var(--text);white-space:nowrap;
+  }
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+  .btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+  .doc{color:var(--muted);font-size:11px}
+
+  /* --- the frame: permanent, both modes --- */
+  .stage{
+    flex:1 1 auto;min-height:0;display:flex;align-items:center;justify-content:center;
+    padding:14px; position:relative;
+  }
+  .frame{
+    height:100%; aspect-ratio:16/9; background:#000;
+    border:1px solid var(--line); border-radius:6px;
+    display:flex;align-items:center;justify-content:center;position:relative;
+    overflow:hidden;
+  }
+  .frame-img{
+    position:absolute;inset:0;
+    background:
+      linear-gradient(135deg,#3a2f22 0%, #6b563a 45%, #241d15 100%);
+  }
+  .frame-tag{
+    position:absolute;left:8px;top:8px;font-size:9.5px;color:var(--muted);
+    background:rgba(0,0,0,.5);border:1px solid var(--line);border-radius:3px;padding:1px 5px;
+  }
+  /* title text as a draggable object (Arrange) */
+  .title-obj{
+    position:relative;z-index:2;color:#f4ead9;font-family:Georgia,"Crimson Text",serif;
+    font-size:26px;letter-spacing:.01em;text-align:center;line-height:1.15;
+    outline:1px dashed var(--accent); outline-offset:9px; padding:2px 6px;
+  }
+  .title-obj small{display:block;font-size:12px;color:#cfc3ae;margin-top:6px;letter-spacing:.06em}
+  .handle{
+    position:absolute;width:6px;height:6px;background:var(--accent);border-radius:1px;
+  }
+  .h-tl{left:-12px;top:-12px}.h-tr{right:-12px;top:-12px}
+  .h-bl{left:-12px;bottom:-12px}.h-br{right:-12px;bottom:-12px}
+
+  /* contextual panel — replaces the permanent inspector */
+  .ctx{
+    position:absolute;right:3cqw;top:3.6cqw;width:21.8cqw;
+    background:var(--panel);border:1px solid var(--line);border-radius:1cqw;
+    padding:1.1cqw;display:flex;flex-direction:column;gap:0.7cqw;
+    box-shadow:0 10px 26px rgba(0,0,0,.5);z-index:3;
+  }
+  .ctx-h{font-size:1.38cqw;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+  .ctx-row{
+    display:flex;align-items:center;gap:0.83cqw;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:0.7cqw;padding:0.55cqw 0.83cqw;font-size:1.45cqw;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .ctx-row.on{border-color:var(--accent);color:var(--accent)}
+  .ctx-more{font-size:1.38cqw;color:var(--muted);padding-top:0.3cqw}
+
+  /* transport */
+  .transport{
+    flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:0 14px 8px;
+  }
+  .tbtn{width:20px;height:16px;border:1px solid var(--line);border-radius:3px;background:var(--panel-2);
+        display:flex;align-items:center;justify-content:center;font-size:8px;color:var(--muted)}
+  .tbtn.play{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+  .scrub{flex:1;height:3px;background:var(--line);border-radius:2px;position:relative}
+  .scrub i{position:absolute;left:0;top:0;bottom:0;width:52%;background:var(--accent);border-radius:2px}
+  .scrub b{position:absolute;left:52%;top:-3px;width:9px;height:9px;border-radius:50%;background:var(--accent);transform:translateX(-50%)}
+  .tc{font-size:10px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+  /* --- the timeline: carries the mode --- */
+  .timeline{
+    flex:0 0 auto;background:var(--panel);border-top:1px solid var(--line);
+    padding:8px 10px 10px;display:flex;flex-direction:column;gap:7px;
+    /* the frame never shrinks — the timeline caps and scrolls inside itself */
+    max-height:25cqw;overflow-y:auto;
+  }
+  .timeline .tl-head{position:sticky;top:0;background:var(--panel);z-index:30}
+  .tl-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .segmented{display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+  .segmented span{padding:3px 12px;font-size:11px;color:var(--muted);background:var(--panel-2)}
+  .segmented span.on{background:var(--accent);color:var(--accent-ink);font-weight:600}
+  .tl-meta{font-size:10px;color:var(--muted)}
+
+  /* ARRANGE: wrapping grid, every card equal */
+  .grid{display:grid;grid-template-columns:repeat(9,1fr);gap:5px}
+  .card{
+    aspect-ratio:16/9;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;
+    position:relative;overflow:hidden;
+  }
+  .card > i{position:absolute;inset:0;opacity:.85}
+
+  /* a group card shows its real composed layout — every member, at slide scale */
+  .cells{position:absolute;inset:0;display:grid;gap:1px;padding:1px}
+  .cells i{position:relative;border-radius:1px;opacity:.88}
+  .cells.g2{grid-template-columns:1fr 1fr}
+  .cells.g3{grid-template-columns:1.9fr 1fr;grid-template-rows:1fr 1fr}
+  .cells.g3 i:first-child{grid-row:span 2}
+  .cells.g6{grid-template-columns:repeat(3,1fr);grid-template-rows:1fr 1fr}
+  .count{
+    position:absolute;right:2px;bottom:1px;font-size:1.05cqw;line-height:1.5;
+    color:var(--accent-ink);background:var(--accent);border-radius:2px;
+    padding:0 0.35cqw;z-index:3;font-weight:700;
+  }
+  .card .n{position:absolute;left:3px;top:2px;font-size:8px;color:rgba(255,255,255,.85);z-index:2;
+           text-shadow:0 1px 2px rgba(0,0,0,.9)}
+  .card.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .card.group{border-color:#6f6552}
+  /* the drop-target state: the card visibly opens to receive */
+  .card.opening{
+    border:1px dashed var(--accent);background:rgba(212,175,110,.10);
+    transform:scaleX(1.28);z-index:4;
+  }
+  .card.opening::before{
+    content:"";position:absolute;left:50%;top:12%;bottom:12%;width:2px;margin-left:-1px;
+    background:var(--accent);border-radius:1px;
+  }
+  .card.dragging{opacity:.5;border-color:var(--accent)}
+  /* open group: the row opens into a band, in flow, occluding nothing */
+  .card.open{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .band{
+    grid-column:1 / -1;background:rgba(212,175,110,.07);border:1px solid var(--accent);
+    border-radius:5px;padding:0.8cqw;display:flex;flex-direction:column;gap:0.7cqw;
+  }
+  .band-h{
+    display:flex;justify-content:space-between;align-items:baseline;gap:1cqw;
+    font-size:1.3cqw;color:var(--muted);
+  }
+  .band-h b{color:var(--text);font-weight:600}
+  .band-h em{font-style:normal;color:var(--accent);opacity:.85;white-space:nowrap}
+  .band-row{display:grid;grid-template-columns:repeat(6,1fr);gap:0.6cqw}
+  .mem{
+    position:relative;aspect-ratio:16/9;border:1px solid var(--line);
+    border-radius:0.45cqw;overflow:hidden;
+  }
+  .mem i{position:absolute;inset:0;opacity:.9}
+  .mem .x{
+    position:absolute;right:0.25cqw;top:0.2cqw;width:1.9cqw;height:1.9cqw;z-index:2;
+    display:flex;align-items:center;justify-content:center;border-radius:50%;
+    background:rgba(0,0,0,.66);color:#fff;font-size:1.25cqw;line-height:1;
+  }
+  .mem .ord{
+    position:absolute;left:0.3cqw;bottom:0.05cqw;font-size:1.05cqw;color:rgba(255,255,255,.85);
+    text-shadow:0 1px 2px rgba(0,0,0,.9);z-index:2;
+  }
+  .mem.leaving{border-color:var(--accent);border-style:dashed;opacity:.55}
+  .card.ph{background:var(--ghost);border-style:dashed;border-color:var(--line)}
+  .card.ph::after{
+    content:"";position:absolute;left:8%;right:8%;top:44%;height:2px;border-radius:2px;
+    background:linear-gradient(90deg,transparent,var(--line),transparent);
+  }
+
+  /* TIME: proportional, seams, audio lane */
+  .strip{display:flex;gap:0;height:52px;align-items:stretch}
+  .seg{
+    position:relative;background:var(--panel-2);border:1px solid var(--line);
+    border-radius:3px;overflow:hidden;min-width:0;
+  }
+  .seg i{position:absolute;inset:0;opacity:.8}
+  .seg .lab{
+    position:absolute;left:4px;bottom:2px;font-size:8px;color:rgba(255,255,255,.9);z-index:2;
+    text-shadow:0 1px 2px rgba(0,0,0,.9);font-variant-numeric:tabular-nums;
+  }
+  .seg.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .seam{
+    flex:0 0 12px;position:relative;display:flex;align-items:center;justify-content:center;
+  }
+  .seam::before{
+    content:"";width:10px;height:10px;border:1px solid var(--accent);
+    background:var(--bg);transform:rotate(45deg);border-radius:1px;
+  }
+  .seam.cut::before{transform:none;width:2px;height:16px;background:var(--line);border:0}
+  .audio{
+    height:26px;background:var(--panel-2);border:1px solid var(--line);border-radius:4px;
+    position:relative;overflow:hidden;display:flex;align-items:center;padding:0 5px;gap:5px;
+  }
+  .wave{flex:1;height:15px;display:flex;align-items:center;gap:1px;overflow:hidden}
+  .wave b{flex:1;background:var(--accent);opacity:.5;border-radius:1px;display:block}
+  .audio .alab{font-size:9px;color:var(--muted);white-space:nowrap}
+  .ruler{display:flex;justify-content:space-between;font-size:9px;color:var(--muted);
+         font-variant-numeric:tabular-nums;padding:0 1px}
+
+  /* Not-used shelf */
+  .shelf{
+    align-self:flex-start;display:inline-flex;align-items:center;gap:6px;
+    background:var(--panel-2);border:1px solid var(--line);
+    border-radius:5px;padding:3px 9px;font-size:10px;color:var(--muted);
+  }
+  .shelf b{color:var(--text);font-weight:600}
+
+  .callouts{margin:10px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+  .callouts li{display:flex;gap:8px;color:var(--muted);line-height:1.45;font-size:12px}
+  .callouts .k{
+    flex:0 0 auto;width:16px;height:16px;border-radius:50%;border:1px solid var(--accent);
+    color:var(--accent);font-size:9.5px;display:flex;align-items:center;justify-content:center;
+    margin-top:1px;font-weight:700;
+  }
+  .callouts b{color:var(--text);font-weight:600}
+
+  /* reflow band */
+  .reflow{
+    margin:30px 0 0;border:1px solid var(--line);border-radius:8px;background:var(--panel);
+    padding:16px 18px;
+  }
+  .reflow h2{font-size:13px;margin:0 0 3px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+  .reflow p{margin:0 0 14px;color:var(--muted);max-width:86ch;line-height:1.55}
+  .reflow p b{color:var(--text);font-weight:600}
+  .rf-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+  @media (max-width:900px){.rf-grid{grid-template-columns:1fr}}
+  .rf{border:1px solid var(--line);border-radius:6px;padding:10px;background:var(--bg)}
+  .rf .t{font-size:11px;color:var(--muted);margin-bottom:8px}
+  .rf .t b{color:var(--text)}
+  .mini{display:flex;height:34px;gap:0;align-items:stretch}
+  .mini .m{background:var(--panel-2);border:1px solid var(--line);border-radius:3px;position:relative;overflow:hidden}
+  .mini .m i{position:absolute;inset:0;opacity:.8}
+  .mini-audio{height:12px;margin-top:4px;border:1px solid var(--line);border-radius:3px;background:var(--panel-2)}
+  .mini-audio.hidden{opacity:0;border-color:transparent;background:transparent}
+  .mini-audio.rising{opacity:.5}
+
+  /* ledger */
+  .ledger{margin:30px 0 0}
+  .ledger h2{font-size:13px;margin:0 0 3px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+  .ledger p{margin:0 0 12px;color:var(--muted);max-width:86ch;line-height:1.55}
+  .scroller{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+  table{border-collapse:collapse;width:100%;min-width:640px;font-size:12px}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+     background:var(--panel)}
+  tr:last-child td{border-bottom:0}
+  td.where{color:var(--text)}
+  td b{color:var(--accent);font-weight:600}
+  .tag{
+    display:inline-block;font-size:9.5px;border:1px solid var(--line);border-radius:3px;
+    padding:0 5px;color:var(--muted);margin-left:6px;white-space:nowrap;
+  }
+  footer{margin:30px 0 0;color:var(--muted);font-size:11.5px;line-height:1.6;max-width:88ch}
+  footer b{color:var(--text)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>One frame, two modes — <em>layout schematic</em></h1>
+  <p class="sub">Editor shell. Visitor mode: Operate. Visual authority inherited — the dark ground and gold
+  accent stay exactly as they are; this is a compositional change, not a new world.</p>
+  <p class="seed">structure #2 of 7 · surface concept seed 3e1ce0f7 · mode operate · dealt 7/2/1 · code-led</p>
+
+  <p class="note"><b>These are schematics, not comps.</b> This machine has no image generation, so the build
+  is code-led by contract: no rendered north-star comp exists and none is owed. What follows is the layout
+  argument — regions, proportions, states and the reflow — drawn at the real 1480×920 window proportion so the
+  density is honest. Colour and type are the incumbent tokens, not new proposals.</p>
+
+  <div class="modes">
+
+    <!-- ============ ARRANGE ============ -->
+    <section>
+      <div class="mode-head">
+        <span class="mode-name">Arrange</span>
+        <span class="mode-what">space — order, and who shares a slide</span>
+      </div>
+
+      <div class="win">
+        <div class="topbar">
+          <div class="tgroup">
+            <span class="brand">Slideshow Studio</span>
+            <span class="btn">New</span><span class="btn">Open…</span><span class="btn">Save</span>
+          </div>
+          <div class="doc">bennett-2026.slideshow.json •</div>
+          <div class="tgroup">
+            <span class="btn">1080p 16:9</span>
+            <span class="btn">Presets ▾</span>
+            <span class="btn primary">Export…</span>
+          </div>
+        </div>
+
+        <div class="stage">
+          <div class="frame">
+            <div class="frame-img"></div>
+            <div class="frame-tag">slide 5 · 0:12.8</div>
+            <div class="title-obj">
+              Margaret Bennett
+              <small>1943 — 2026</small>
+              <span class="handle h-tl"></span><span class="handle h-tr"></span>
+              <span class="handle h-bl"></span><span class="handle h-br"></span>
+            </div>
+          </div>
+          <div class="ctx">
+            <div class="ctx-h"><span>Slide 5 · 3 photos</span><span>×</span></div>
+            <div class="ctx-row on">◧ &nbsp;Featured</div>
+            <div class="ctx-row">▦ &nbsp;Even grid</div>
+            <div class="ctx-row">⤢ &nbsp;Zoom in</div>
+            <div class="ctx-row">→ &nbsp;Pan right</div>
+            <div class="ctx-more">Values ▸</div>
+          </div>
+        </div>
+
+        <div class="transport">
+          <span class="tbtn">⏮</span><span class="tbtn play">▶</span><span class="tbtn">⏭</span>
+          <span class="tc">0:12.8</span>
+          <span class="scrub"><i></i><b></b></span>
+          <span class="tc">3:41</span>
+        </div>
+
+        <div class="timeline">
+          <div class="tl-head">
+            <div class="segmented"><span class="on">Arrange</span><span>Time</span></div>
+            <div class="tl-meta">238 photos · 41 slides</div>
+          </div>
+          <div class="grid">
+            <div class="card"><i style="background:#4a5a6b"></i><span class="n">1</span></div>
+            <div class="card"><i style="background:#6b4a4a"></i><span class="n">2</span></div>
+            <div class="card group">
+              <div class="cells g3">
+                <i style="background:#5a6b4a"></i><i style="background:#7d8a5c"></i><i style="background:#46583c"></i>
+              </div>
+              <span class="n">3</span><span class="count">3</span>
+            </div>
+            <div class="card"><i style="background:#6b5f4a"></i><span class="n">4</span></div>
+            <div class="card sel"><i style="background:#6b563a"></i><span class="n">5</span></div>
+            <div class="card"><i style="background:#4a4a6b"></i><span class="n">6</span></div>
+            <div class="card opening"><span class="n">7</span></div>
+            <div class="card dragging"><i style="background:#6b4a5f"></i><span class="n">8</span></div>
+            <div class="card"><i style="background:#4a6b64"></i><span class="n">9</span></div>
+            <div class="card"><i style="background:#5f6b4a"></i><span class="n">10</span></div>
+            <div class="card group">
+              <div class="cells g2"><i style="background:#6b544a"></i><i style="background:#8a6a4e"></i></div>
+              <span class="n">11</span><span class="count">2</span>
+            </div>
+            <div class="card"><i style="background:#4a556b"></i><span class="n">12</span></div>
+            <div class="card"><i style="background:#666b4a"></i><span class="n">13</span></div>
+            <div class="card group open">
+              <div class="cells g6">
+                <i style="background:#4a6b52"></i><i style="background:#8a6a4e"></i><i style="background:#4f3f36"></i>
+                <i style="background:#7a5a52"></i><i style="background:#5e4a3e"></i><i style="background:#8f7a5c"></i>
+              </div>
+              <span class="n">14</span><span class="count">6</span>
+            </div>
+            <div class="card"><i style="background:#6b4a63"></i><span class="n">15</span></div>
+            <div class="card ph"><span class="n">16</span></div>
+            <div class="card ph"><span class="n">17</span></div>
+            <div class="card ph"><span class="n">18</span></div>
+
+            <div class="band">
+              <div class="band-h"><span><b>Slide 14</b> · 6 photos</span><em>drag one out, ⌫ to split, Esc to close</em></div>
+              <div class="band-row">
+                <div class="mem"><i style="background:#4a6b52"></i><span class="ord">1</span><span class="x">×</span></div>
+                <div class="mem"><i style="background:#8a6a4e"></i><span class="ord">2</span><span class="x">×</span></div>
+                <div class="mem leaving"><i style="background:#4f3f36"></i><span class="ord">3</span><span class="x">×</span></div>
+                <div class="mem"><i style="background:#7a5a52"></i><span class="ord">4</span><span class="x">×</span></div>
+                <div class="mem"><i style="background:#5e4a3e"></i><span class="ord">5</span><span class="x">×</span></div>
+                <div class="mem"><i style="background:#8f7a5c"></i><span class="ord">6</span><span class="x">×</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="shelf">▸ <b>Not used</b> · 12 &nbsp;<span style="opacity:.6">drag a card here to drop it from the film</span></div>
+        </div>
+      </div>
+
+      <ul class="callouts">
+        <li><span class="k">1</span><span>Every card is <b>the same width</b> — duration is not the subject
+          here, so nothing on screen encodes it.</span></li>
+        <li><span class="k">2</span><span>Card 7 is <b>opening to receive</b> card 8: the drop target widens
+          and shows a seam, rather than merely highlighting.</span></li>
+        <li><span class="k">3</span><span>A group card shows <b>its real composed layout</b> — every member at
+          slide scale, in the arrangement that will render. Card 11 holds 2, card 3 holds 3, card 14 holds 6. The badge counts
+          them; the card never stands in for its members with a single face.</span></li>
+        <li><span class="k">4</span><span><b>The row opens.</b> Opening card 14 expands it into a band across
+          the full grid width, inserted after its own row — in flow, occluding nothing; cards below reflow down.
+          Members sit at readable size in playback order, each carrying <b>×</b>, which lifts that photo out and
+          drops it back into the timeline as its own slide immediately after the group. Member 3 is shown
+          leaving. Dragging one out does the same; <b>⌫</b> does it from the keyboard, <b>Esc</b> closes.
+          Opening is independent of selection — the frame still shows the playhead's slide.</span></li>
+        <li><span class="k">5</span><span>Removing members down to <b>one dissolves the group</b>: the last photo
+          becomes an ordinary single slide in place, and the group stops existing.</span></li>
+        <li><span class="k">6</span><span>The band and 41 slides both outgrow the timeline's share of the window,
+          so the <b>timeline caps and scrolls</b> inside itself. The frame never shrinks.</span></li>
+        <li><span class="k">7</span><span>Cards 16–18 are <b>import placeholders</b> — they exist and are
+          orderable before their thumbnails have decoded.</span></li>
+        <li><span class="k">8</span><span>Title text is a <b>draggable object on the frame</b>. Placement
+          here; wording and timing in Time.</span></li>
+        <li><span class="k">9</span><span>Selection summons a <b>contextual panel</b> of outcome-level
+          controls. Raw numbers live behind “Values ▸”. No permanent inspector.</span></li>
+      </ul>
+    </section>
+
+    <!-- ============ TIME ============ -->
+    <section>
+      <div class="mode-head">
+        <span class="mode-name">Time</span>
+        <span class="mode-what">duration — pacing, transitions, music</span>
+      </div>
+
+      <div class="win">
+        <div class="topbar">
+          <div class="tgroup">
+            <span class="brand">Slideshow Studio</span>
+            <span class="btn">New</span><span class="btn">Open…</span><span class="btn">Save</span>
+          </div>
+          <div class="doc">bennett-2026.slideshow.json •</div>
+          <div class="tgroup">
+            <span class="btn">1080p 16:9</span>
+            <span class="btn">Presets ▾</span>
+            <span class="btn primary">Export…</span>
+          </div>
+        </div>
+
+        <div class="stage">
+          <div class="frame">
+            <div class="frame-img"></div>
+            <div class="frame-tag">slide 5 · 0:12.8</div>
+            <div class="title-obj">
+              Margaret Bennett
+              <small>1943 — 2026</small>
+            </div>
+          </div>
+          <div class="ctx">
+            <div class="ctx-h"><span>Title · slide 5</span><span>×</span></div>
+            <div class="ctx-row on">Aa &nbsp;Margaret Bennett</div>
+            <div class="ctx-row">⏱ &nbsp;In at 0.4s</div>
+            <div class="ctx-row">⏱ &nbsp;Hold 3.2s</div>
+            <div class="ctx-row">◐ &nbsp;Fade 0.6s</div>
+            <div class="ctx-more">Values ▸</div>
+          </div>
+        </div>
+
+        <div class="transport">
+          <span class="tbtn">⏮</span><span class="tbtn play">▶</span><span class="tbtn">⏭</span>
+          <span class="tc">0:12.8</span>
+          <span class="scrub"><i></i><b></b></span>
+          <span class="tc">3:41</span>
+        </div>
+
+        <div class="timeline">
+          <div class="tl-head">
+            <div class="segmented"><span>Arrange</span><span class="on">Time</span></div>
+            <div class="tl-meta">3:41 total · music fills to 3:41</div>
+          </div>
+
+          <div class="strip">
+            <div class="seg" style="flex:3.5"><i style="background:#4a5a6b"></i><span class="lab">3.5s</span></div>
+            <div class="seam"></div>
+            <div class="seg" style="flex:4"><i style="background:#6b4a4a"></i><span class="lab">4.0s</span></div>
+            <div class="seam"></div>
+            <div class="seg" style="flex:6">
+              <div class="cells g3"><i style="background:#5a6b4a"></i><i style="background:#7d8a5c"></i><i style="background:#46583c"></i></div>
+              <span class="lab">6.0s · 3 photos</span>
+            </div>
+            <div class="seam cut"></div>
+            <div class="seg" style="flex:4"><i style="background:#6b5f4a"></i><span class="lab">4.0s</span></div>
+            <div class="seam"></div>
+            <div class="seg sel" style="flex:5"><i style="background:#6b563a"></i><span class="lab">5.0s</span></div>
+            <div class="seam"></div>
+            <div class="seg" style="flex:2.5"><i style="background:#4a4a6b"></i><span class="lab">2.5s</span></div>
+            <div class="seam"></div>
+            <div class="seg" style="flex:4"><i style="background:#4a6b64"></i><span class="lab">4.0s</span></div>
+          </div>
+
+          <div class="audio">
+            <span class="alab">♪ music.mp3</span>
+            <span class="wave">
+              <b style="height:40%"></b><b style="height:70%"></b><b style="height:45%"></b><b style="height:88%"></b>
+              <b style="height:60%"></b><b style="height:35%"></b><b style="height:75%"></b><b style="height:50%"></b>
+              <b style="height:92%"></b><b style="height:44%"></b><b style="height:66%"></b><b style="height:38%"></b>
+              <b style="height:80%"></b><b style="height:55%"></b><b style="height:70%"></b><b style="height:42%"></b>
+              <b style="height:58%"></b><b style="height:85%"></b><b style="height:47%"></b><b style="height:63%"></b>
+              <b style="height:39%"></b><b style="height:72%"></b><b style="height:51%"></b><b style="height:90%"></b>
+              <b style="height:44%"></b><b style="height:68%"></b><b style="height:36%"></b><b style="height:77%"></b>
+              <b style="height:53%"></b><b style="height:61%"></b><b style="height:41%"></b><b style="height:74%"></b>
+            </span>
+            <span class="alab">fade out 4s</span>
+          </div>
+
+          <div class="ruler">
+            <span>0:00</span><span>0:30</span><span>1:00</span><span>1:30</span>
+            <span>2:00</span><span>2:30</span><span>3:00</span><span>3:41</span>
+          </div>
+        </div>
+      </div>
+
+      <ul class="callouts">
+        <li><span class="k">10</span><span>Same cards, same order, same selection — <b>width is now
+          duration</b>. Nothing else in the window moved.</span></li>
+        <li><span class="k">11</span><span>Transitions live <b>in the seams</b>, where they actually happen. A
+          diamond is a crossfade or wipe; a plain rule is a cut.</span></li>
+        <li><span class="k">12</span><span>The <b>audio lane rises</b> beneath the strip and the music plays.
+          This is the mode's honesty requirement — and the engineering that gates it.</span></li>
+        <li><span class="k">13</span><span>The contextual panel <b>re-aims at the same selection</b>: in Time
+          the title's controls are wording and timing, not placement.</span></li>
+      </ul>
+    </section>
+  </div>
+
+  <!-- ============ THE REFLOW ============ -->
+  <section class="reflow">
+    <h2>The signature interaction</h2>
+    <p>Switching modes is <b>one animated reflow</b>, not a screen change. The frame never moves. Cards keep
+    their identity and their order and only change what they encode — equal width becomes true length, seams
+    appear, the audio lane rises from zero height and the music starts. That single transition teaches the
+    idea of duration <b>without a word of copy</b>, which is why it is the one motion this surface owns.</p>
+    <div class="rf-grid">
+      <div class="rf">
+        <div class="t"><b>Arrange</b> — equal widths, no lane</div>
+        <div class="mini">
+          <div class="m" style="flex:1"><i style="background:#4a5a6b"></i></div>
+          <div class="m" style="flex:1"><i style="background:#6b4a4a"></i></div>
+          <div class="m" style="flex:1"><i style="background:#5a6b4a"></i></div>
+          <div class="m" style="flex:1"><i style="background:#6b5f4a"></i></div>
+          <div class="m" style="flex:1"><i style="background:#6b563a"></i></div>
+          <div class="m" style="flex:1"><i style="background:#4a4a6b"></i></div>
+        </div>
+        <div class="mini-audio hidden"></div>
+      </div>
+      <div class="rf">
+        <div class="t"><b>Mid-reflow</b> — cards stretching, lane rising</div>
+        <div class="mini">
+          <div class="m" style="flex:1.6"><i style="background:#4a5a6b"></i></div>
+          <div class="m" style="flex:1.3"><i style="background:#6b4a4a"></i></div>
+          <div class="m" style="flex:2.2"><i style="background:#5a6b4a"></i></div>
+          <div class="m" style="flex:1.3"><i style="background:#6b5f4a"></i></div>
+          <div class="m" style="flex:1.5"><i style="background:#6b563a"></i></div>
+          <div class="m" style="flex:0.9"><i style="background:#4a4a6b"></i></div>
+        </div>
+        <div class="mini-audio rising"></div>
+      </div>
+      <div class="rf">
+        <div class="t"><b>Time</b> — true lengths, lane playing</div>
+        <div class="mini">
+          <div class="m" style="flex:3.5"><i style="background:#4a5a6b"></i></div>
+          <div class="m" style="flex:4"><i style="background:#6b4a4a"></i></div>
+          <div class="m" style="flex:6"><i style="background:#5a6b4a"></i></div>
+          <div class="m" style="flex:4"><i style="background:#6b5f4a"></i></div>
+          <div class="m" style="flex:5"><i style="background:#6b563a"></i></div>
+          <div class="m" style="flex:2.5"><i style="background:#4a4a6b"></i></div>
+        </div>
+        <div class="mini-audio"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CAPABILITY LEDGER ============ -->
+  <section class="ledger">
+    <h2>Capability ledger — hidden, never removed</h2>
+    <p>Two permanent panes become zero. Every control reachable in the app today is accounted for below;
+    an unlisted control would be a deletion, and deletion is an anti-goal.</p>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>Today</th><th>Where it lives</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Media bin (250px, permanent)</td>
+            <td class="where"><b>Gone.</b> Import drops straight into Arrange; the collapsible <b>Not used</b>
+              shelf holds what is dragged back out.</td>
+            <td>You cannot reorder what is not in the film.</td>
+          </tr>
+          <tr>
+            <td>Inspector (300px, permanent)</td>
+            <td class="where"><b>Gone.</b> Selection summons a contextual panel of 3–5 outcome-level controls;
+              raw values behind a disclosure.</td>
+            <td>The user owns order and grouping. Everything else is chosen for them and stays adjustable.</td>
+          </tr>
+          <tr>
+            <td>Filmstrip (fixed strip, always proportional-ish)</td>
+            <td class="where">Becomes <b>the timeline</b>, which carries the mode.</td>
+            <td>The mode is a property of the timeline, not of the window.</td>
+          </tr>
+          <tr>
+            <td>Layout picker · margin · gutter</td>
+            <td class="where">Contextual panel, Arrange <span class="tag">outcome-level</span></td>
+            <td>Named results (“Featured”, “Even grid”) with numbers behind Values ▸.</td>
+          </tr>
+          <tr>
+            <td>Cells per slide (add / remove a photo from a collage)</td>
+            <td class="where"><b>The band</b>, Arrange — opening a group card expands it across the grid.
+              <b>×</b>, drag, or <b>⌫</b> lifts a photo out as its own slide directly after the group; drop a
+              card onto a group to add one. Down to one member, the group dissolves.</td>
+            <td>Grouping is one of the user's two decisions, so its inverse must be as reachable as the bind.</td>
+          </tr>
+          <tr>
+            <td>Per-cell fit · motion · corner · border</td>
+            <td class="where">Contextual panel, Arrange <span class="tag">outcome-level</span></td>
+            <td>“Zoom in”, “Pan →” rather than from/to crop windows.</td>
+          </tr>
+          <tr>
+            <td>Transition type · duration</td>
+            <td class="where"><b>The seams</b>, Time</td>
+            <td>Placed where the transition physically occurs.</td>
+          </tr>
+          <tr>
+            <td>Slide duration</td>
+            <td class="where"><b>Card width</b>, Time — draggable edge</td>
+            <td>The quantity is the control.</td>
+          </tr>
+          <tr>
+            <td>Text overlays: content, timing, fades</td>
+            <td class="where">Contextual panel, Time</td>
+            <td>Wording and timing are temporal decisions.</td>
+          </tr>
+          <tr>
+            <td>Text overlays: anchor, offset, wrap</td>
+            <td class="where"><b>Direct manipulation on the frame</b>, Arrange</td>
+            <td>Placement is spatial. Drag, don't type coordinates.</td>
+          </tr>
+          <tr>
+            <td>Audio tracks: gain, fades, seek, loop</td>
+            <td class="where"><b>Audio lane</b>, Time</td>
+            <td>Only meaningful once the music is audible.</td>
+          </tr>
+          <tr>
+            <td>New · Open · Save · Save As · resolution · Presets · Export</td>
+            <td class="where">Top bar — <b>unchanged</b></td>
+            <td>Outside the scope of the compositional change.</td>
+          </tr>
+          <tr>
+            <td>Space / ← / → transport · ⌘Z undo</td>
+            <td class="where"><b>Unchanged</b>, plus keyboard reorder and grouping</td>
+            <td>300 items must be operable without a mouse.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <b>Not decided by this schematic:</b> the exact card size and column count at 1100px minimum width, the
+    disclosure pattern behind “Values ▸”, the keyboard grammar for reorder, how the band lays out 7–8 members,
+    and how the grid keeps the opened group's row in view while the cards below it reflow.
+    <br><b>Sequencing note:</b> audio playback in preview is not built and gates Time mode's honesty; it is the
+    largest single engineering item here and its responsiveness constrains the mode's design, so it precedes
+    the UI work. Proportional scrubbing across hundreds of slides needs frame caching or throttling on top of
+    <code>render_preview</code>, and progressive import needs <code>probe_media</code> to stop awaiting one
+    file at a time.
+  </footer>
+
+</div>
+</body>
+</html>
