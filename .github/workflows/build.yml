@@ -1,0 +1,62 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Unit tests
+        run: cargo test -p slideshow-core -p slideshow-cli
+      - name: Headless render smoke test
+        run: |
+          examples/make-test-media.sh
+          cargo run --release -p slideshow-cli -- render examples/test.slideshow.json -o examples/out/ci.mp4 --scale 0.5 --preset ultrafast
+          ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1 examples/out/ci.mp4
+
+  build-app:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            triple: aarch64-apple-darwin
+          - os: windows-latest
+            triple: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch ffmpeg sidecar (macOS)
+        if: runner.os == 'macOS'
+        run: scripts/fetch-ffmpeg.sh ${{ matrix.triple }}
+      - name: Fetch ffmpeg sidecar (Windows)
+        if: runner.os == 'Windows'
+        run: powershell -ExecutionPolicy Bypass -File scripts/fetch-ffmpeg.ps1
+      - name: Install frontend deps
+        working-directory: app
+        run: npm ci
+      - name: Build app
+        working-directory: app
+        run: npx tauri build
+      - name: Upload bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: slideshow-studio-${{ matrix.os }}
+          path: |
+            target/release/bundle/**/*.dmg
+            target/release/bundle/**/*.app.tar.gz
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*.exe
+          if-no-files-found: warn
