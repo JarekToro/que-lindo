@@ -4,6 +4,79 @@ Derived from `PRODUCT.md` and the editor-shell surface brief at
 the editor-shell surface brief ("One frame, two modes", seed `3e1ce0f7`).
 
 Status: proposed, not started. Date: 2026-08-31.
+Branch: `editor-shell-plan-and-mcp` (not `main`).
+
+---
+
+## Handoff
+
+Read these three first. They are the authority; do not re-decide what they
+settle.
+
+| Document | Owns |
+|---|---|
+| `PRODUCT.md` | Product truth — users, purpose, positioning, what is out of scope, what is explicitly undecided |
+| the editor-shell surface brief | The editor-shell design contract: the chosen direction, the group viewer, the dissolve rule, the keyboard grammar, the constraints, and the alternatives already rejected |
+| `docs/editor-shell-schematic.html` | The same direction drawn — Arrange, Time, the reflow, and a capability ledger mapping every control in the app today to where it lives afterwards |
+
+Open the schematic in a browser; it is a self-contained HTML file.
+
+Anything the surface brief lists under "Open design questions" (repeated at the
+bottom of this plan) is genuinely open and belongs to the owner, not to whoever
+picks this up. Do not resolve them silently.
+
+### Setting up the machine
+
+**A clean checkout does not build.** `tauri-build` needs ffmpeg sidecars that
+are gitignored, and fails with `resource path binaries/ffmpeg-<triple> doesn't
+exist`. Either fetch static builds:
+
+```sh
+scripts/fetch-ffmpeg.sh          # macOS / Linux
+scripts\fetch-ffmpeg.ps1         # Windows
+```
+
+…or, for local development only, copy the ffmpeg and ffprobe already on your
+PATH into `app/src-tauri/binaries/` renamed to `ffmpeg-<target-triple>` and
+`ffprobe-<target-triple>` (e.g. `ffmpeg-aarch64-apple-darwin`). Those are
+dynamically linked, so use the fetch script before building installers.
+
+The engine also needs `ffmpeg` and `ffprobe` reachable at runtime — next to the
+executable, then `binaries/`, then `PATH`; `SLIDESHOW_FFMPEG_DIR` overrides.
+
+### Commands
+
+```sh
+cargo build --workspace                 # Rust: engine, CLI, Tauri app
+cd app && npx tsc --noEmit              # frontend typecheck
+cd app && npm install && npm run tauri dev
+cd app && npm run dev:mcp               # same, plus the MCP agent bridge
+```
+
+End-to-end check without the GUI, which is the fastest way to confirm the engine
+still renders after a core change:
+
+```sh
+examples/make-test-media.sh
+cargo run --release -p slideshow-cli -- render examples/test.slideshow.json -o examples/out/test.mp4
+```
+
+Every phase should land with `cargo build --workspace` and `npx tsc --noEmit`
+both clean.
+
+### Constraints on the work
+
+- **Never use the TypeScript `any` type.** Not as a cast, not as a stopgap. It
+  is not an accepted solution in this repo.
+- **No base64 for binary payloads** — see finding 3 below. This is the one rule
+  most likely to be violated by copying the existing code, because the existing
+  code violates it.
+- **Capability is hidden, never removed.** Everything reachable in the app today
+  stays reachable; the schematic's capability ledger is the checklist.
+- **Occasion-neutral.** Memorial is one preset among several. Nothing in the
+  interface may presume grief, or presume celebration.
+- **Desktop only**, minimum window 1100×700. There is no mobile or touch target.
+- Do not add Claude attribution or `Co-Authored-By` lines to commits.
 
 ---
 
