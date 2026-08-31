@@ -1,5 +1,6 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { loadProject, saveProject } from "../api";
+import { loadProject, probeMedia, saveProject } from "../api";
+import { projectMediaPaths } from "../App";
 import { applyMemorialTheme, emptyProject, endCard, titleCard } from "../presets";
 import { useEditor } from "../store";
 import type { FfmpegStatus } from "../types";
@@ -26,6 +27,8 @@ export default function TopBar({
   const mutate = useEditor((s) => s.mutate);
   const setPath = useEditor((s) => s.setPath);
   const markSaved = useEditor((s) => s.markSaved);
+  const addMediaList = useEditor((s) => s.addMedia);
+  const addMedia1 = (m: Parameters<typeof addMediaList>[0][number]) => addMediaList([m]);
 
   const doNew = () => {
     if (dirty && !confirm("Discard unsaved changes?")) return;
@@ -42,6 +45,9 @@ export default function TopBar({
     try {
       const p = await loadProject(picked);
       replaceProject(p, { path: picked });
+      for (const mp of projectMediaPaths(p)) {
+        probeMedia(mp).then(addMedia1).catch(() => {});
+      }
     } catch (e) {
       alert(`Could not open project:\n${e}`);
     }

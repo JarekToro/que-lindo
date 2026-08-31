@@ -80,7 +80,7 @@ fn timing_of(project: &Project) -> Timing {
         .map(|i| Span {
             start: tl.slide_start(i),
             end: tl.slide_end(i),
-            transition_in: 0.0,
+            transition_in: tl.transition_in(i),
         })
         .collect();
     Timing { total: tl.total_duration(), spans }
@@ -110,12 +110,18 @@ fn check_ffmpeg(state: State<AppState>) -> FfmpegStatus {
 fn set_project(state: State<AppState>, project: Project, rev: u64) -> Timing {
     let timing = timing_of(&project);
     let timeline = Timeline::new(&project);
+    let _ = rev; // revision only matters to the frontend
     *state.current.lock().unwrap() = Some(preview::CurrentDoc {
-        rev,
         project: Arc::new(project),
         timeline: Arc::new(timeline),
     });
     timing
+}
+
+/// Project file passed on the command line (open-on-launch / double-click).
+#[tauri::command]
+fn startup_project() -> Option<String> {
+    std::env::args().nth(1).filter(|a| a.ends_with(".json"))
 }
 
 #[tauri::command]
@@ -197,6 +203,20 @@ fn make_thumb(
         "data:image/png;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(png)
     ))
+}
+
+/// Render a preview frame (same compositor as export) as a data URL.
+#[tauri::command]
+async fn render_preview(
+    state: State<'_, AppState>,
+    time: f64,
+    scale: f32,
+) -> Result<String, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    state.preview_tx.send(preview::Job { time, scale, reply: tx });
+    tauri::async_runtime::spawn_blocking(move || rx.recv().map_err(|e| e.to_string())?)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -326,17 +346,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(state)
-        .register_asynchronous_uri_scheme_protocol("preview", |ctx, request, responder| {
-            let state = ctx.app_handle().state::<AppState>();
-            preview::handle_request(&state.preview_tx, request, responder);
-        })
         .invoke_handler(tauri::generate_handler![
             check_ffmpeg,
+            startup_project,
             set_project,
             load_project,
             save_project,
             probe_media,
             list_fonts,
+            render_preview,
             export_video,
             cancel_export,
             reveal_path,
