@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "mcp",
+  "description": "Dev-only: lets the webview forward console logs and IPC activity to tauri-plugin-mcp",
+  "windows": ["main"],
+  "permissions": [
+    "mcp:default"
+  ]
+}

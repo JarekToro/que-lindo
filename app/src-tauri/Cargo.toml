@@ -15,6 +15,9 @@ tauri-build = { version = "2", features = [] }
 slideshow-core = { path = "../../crates/slideshow-core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+# Opt-in debugging bridge for AI agents (`mcp` feature). Optional so that it is
+# absent from the dependency graph unless asked for -- see [features] below.
+tauri-plugin-mcp = { git = "https://github.com/P3GLEG/tauri-plugin-mcp", tag = "v0.3.1", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
@@ -22,3 +25,10 @@ log.workspace = true
 env_logger = "0.11"
 base64 = "0.22"
 image.workspace = true
+
+[features]
+# Lets an MCP client drive and inspect the running app. Development only:
+# it exposes input injection, JS evaluation and screenshots over a local
+# socket, so it must never be enabled for a build you distribute.
+# Run it with `npm run dev:mcp`.
+mcp = ["dep:tauri-plugin-mcp"]
