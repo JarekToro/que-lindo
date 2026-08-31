@@ -285,16 +285,29 @@ export default function Inspector() {
               ]}
             />
           )}
-          {slide.texts.length > 0 && (
-            <Verbs
-              label="Text"
-              options={slide.texts.slice(0, 3).map((t, ti) => ({
+          <Verbs
+            label="Text"
+            options={[
+              ...slide.texts.slice(0, 3).map((t, ti) => ({
                 label: t.text.trim() ? `“${t.text.slice(0, 14)}${t.text.length > 14 ? "…" : ""}”` : t.role,
                 active: false,
                 onPick: () => selectText(ti),
-              }))}
-            />
-          )}
+              })),
+              {
+                label: "+ Add",
+                active: false,
+                onPick: () => {
+                  updateSlide(index, {
+                    texts: [
+                      ...slide.texts,
+                      defaultText({ text: "Title", role: "title", size: 0.08, anchor: "center", offset: [0, 0], fade: 0.6 }),
+                    ],
+                  });
+                  selectText(slide.texts.length);
+                },
+              },
+            ]}
+          />
         </>
       )}
     </div>

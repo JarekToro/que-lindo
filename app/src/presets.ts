@@ -91,6 +91,20 @@ export function slideForMedia(media: ImportedMedia): Slide {
   return slide;
 }
 
+/** Anchor name → its (x, y) point as frame fractions (mirrors Anchor::point
+ * in model.rs; the renderer aligns the text box to this point). */
+export const ANCHOR_POINTS: Record<string, [number, number]> = {
+  top_left: [0, 0],
+  top_center: [0.5, 0],
+  top_right: [1, 0],
+  center_left: [0, 0.5],
+  center: [0.5, 0.5],
+  center_right: [1, 0.5],
+  bottom_left: [0, 1],
+  bottom_center: [0.5, 1],
+  bottom_right: [1, 1],
+};
+
 // ---- grouping (a group is just a Slide with more than one cell) ----
 
 /** Most photos a group holds; past this a drop refuses to bind. */
