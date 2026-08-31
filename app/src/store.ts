@@ -4,6 +4,45 @@ import { emptyProject } from "./presets";
 import type { MediaInfo, MediaItem, Project, Slide, Timing } from "./types";
 
 const UNDO_LIMIT = 100;
+const UI_PREFS_KEY = "slideshow-ui-prefs";
+
+/** Where the timeline panel docks. */
+export type Dock = "bottom" | "left" | "right";
+
+export interface UiPrefs {
+  dock: Dock;
+  /** Timeline panel size: height when docked bottom, width when docked aside. */
+  timelineSize: number;
+  inspectorWidth: number;
+}
+
+const DEFAULT_UI: UiPrefs = { dock: "bottom", timelineSize: 260, inspectorWidth: 300 };
+
+function loadUiPrefs(): UiPrefs {
+  try {
+    const raw = localStorage.getItem(UI_PREFS_KEY);
+    if (!raw) return DEFAULT_UI;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return DEFAULT_UI;
+    const p = parsed as Partial<UiPrefs>;
+    return {
+      dock: p.dock === "left" || p.dock === "right" || p.dock === "bottom" ? p.dock : DEFAULT_UI.dock,
+      timelineSize: typeof p.timelineSize === "number" ? p.timelineSize : DEFAULT_UI.timelineSize,
+      inspectorWidth:
+        typeof p.inspectorWidth === "number" ? p.inspectorWidth : DEFAULT_UI.inspectorWidth,
+    };
+  } catch {
+    return DEFAULT_UI;
+  }
+}
+
+function saveUiPrefs(ui: UiPrefs) {
+  try {
+    localStorage.setItem(UI_PREFS_KEY, JSON.stringify(ui));
+  } catch {
+    // Storage unavailable — prefs simply don't persist.
+  }
+}
 
 export interface EditorState {
   project: Project;
@@ -22,6 +61,8 @@ export interface EditorState {
   playing: boolean;
   /** Which face the timeline shows: space (arrange) or time. */
   mode: "arrange" | "time";
+  /** Panel layout preferences (persisted per machine, not per project). */
+  ui: UiPrefs;
 
   past: Project[];
   future: Project[];
@@ -32,6 +73,7 @@ export interface EditorState {
    * imports land as one gesture). */
   mutate(fn: (p: Project) => Project, opts?: { history?: boolean }): void;
   setMode(mode: "arrange" | "time"): void;
+  setUi(patch: Partial<UiPrefs>): void;
   updateSlide(index: number, patch: Partial<Slide>): void;
   selectSlide(index: number, seek?: boolean): void;
   selectCell(index: number | null): void;
@@ -78,6 +120,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   time: 0,
   playing: false,
   mode: "arrange",
+  ui: loadUiPrefs(),
   past: [],
   future: [],
 
@@ -115,6 +158,12 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setMode(mode) {
     set({ mode });
+  },
+
+  setUi(patch) {
+    const ui = { ...get().ui, ...patch };
+    set({ ui });
+    saveUiPrefs(ui);
   },
 
   updateSlide(index, patch) {

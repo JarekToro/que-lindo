@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { checkFfmpeg, loadProject, mediaThumb, onFileDrop, probeMedia, startupProject } from "./api";
 import ExportDialog from "./components/ExportDialog";
 import Inspector from "./components/Inspector";
 import Preview from "./components/Preview";
+import Splitter from "./components/Splitter";
 import Timeline from "./components/Timeline";
 import TopBar from "./components/TopBar";
 import { slideForMedia } from "./presets";
@@ -154,14 +156,73 @@ export default function App() {
     void importIntoTimeline(Array.isArray(picked) ? picked : [picked]);
   };
 
+  const ui = useEditor((s) => s.ui);
+  const setUi = useEditor((s) => s.setUi);
+  const dock = ui.dock;
+
+  const timelineSplitter = (
+    <Splitter
+      axis={dock === "bottom" ? "y" : "x"}
+      // Bottom: dragging up grows the panel. Left: dragging right grows it.
+      sign={dock === "left" ? 1 : -1}
+      value={ui.timelineSize}
+      min={dock === "bottom" ? 140 : 220}
+      max={dock === "bottom" ? 560 : 720}
+      onChange={(v) => setUi({ timelineSize: v })}
+      label="Resize timeline panel"
+    />
+  );
+
+  const workspace = (
+    <div className="workspace">
+      <Preview />
+      <Splitter
+        axis="x"
+        sign={-1}
+        value={ui.inspectorWidth}
+        min={220}
+        max={480}
+        onChange={(v) => setUi({ inspectorWidth: v })}
+        label="Resize inspector panel"
+      />
+      <Inspector />
+    </div>
+  );
+
   return (
-    <div className="app">
+    <div
+      className={`app dock-${dock}`}
+      style={
+        {
+          "--inspector-w": `${ui.inspectorWidth}px`,
+          "--timeline-size": `${ui.timelineSize}px`,
+        } as CSSProperties
+      }
+    >
       <TopBar ffmpeg={ffmpeg} onExport={() => setExporting(true)} />
-      <div className="workspace">
-        <Preview />
-        <Inspector />
+      <div className={`shell shell-${dock}`}>
+        {dock === "left" && (
+          <>
+            <Timeline onImport={importMedia} />
+            {timelineSplitter}
+          </>
+        )}
+        {dock === "bottom" ? (
+          <div className="shell-main">
+            {workspace}
+            {timelineSplitter}
+            <Timeline onImport={importMedia} />
+          </div>
+        ) : (
+          workspace
+        )}
+        {dock === "right" && (
+          <>
+            {timelineSplitter}
+            <Timeline onImport={importMedia} />
+          </>
+        )}
       </div>
-      <Timeline onImport={importMedia} />
       {exporting && <ExportDialog onClose={() => setExporting(false)} ffmpegFound={!!ffmpeg?.found} />}
     </div>
   );
