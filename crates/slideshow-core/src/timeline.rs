@@ -13,6 +13,9 @@ pub struct Timeline {
     /// Effective transition-in duration for each slide (0 for the first).
     trans_in: Vec<f64>,
     kinds: Vec<TransitionKind>,
+    /// The film's ending: last slide leaving into the background.
+    outro_kind: TransitionKind,
+    outro_dur: f64,
     total: f64,
 }
 
@@ -68,7 +71,38 @@ impl Timeline {
             cursor += dur;
         }
 
-        Self { starts, durations, trans_in, kinds, total: cursor.max(0.0) }
+        // The outro plays inside the last slide's time, like the intro does
+        // inside the first's.
+        let mut outro_dur = project.outro.effective_duration();
+        if let Some(last) = durations.last() {
+            outro_dur = outro_dur.min(last * 0.5);
+        } else {
+            outro_dur = 0.0;
+        }
+
+        Self {
+            starts,
+            durations,
+            trans_in,
+            kinds,
+            outro_kind: project.outro.kind,
+            outro_dur,
+            total: cursor.max(0.0),
+        }
+    }
+
+    /// The ending in progress at time `t`: the transition kind and its 0..1
+    /// progress, once the film enters its final `outro` seconds.
+    pub fn outro_at(&self, t: f64) -> Option<(TransitionKind, f32)> {
+        if self.outro_dur <= 0.0 || self.total <= 0.0 {
+            return None;
+        }
+        let begin = self.total - self.outro_dur;
+        if t < begin {
+            return None;
+        }
+        let p = ((t - begin) / self.outro_dur).clamp(0.0, 1.0) as f32;
+        Some((self.outro_kind, p))
     }
 
     pub fn total_duration(&self) -> f64 {
@@ -205,6 +239,21 @@ mod tests {
         assert!((tr.progress - 0.5).abs() < 1e-6);
         // Past the intro, plain slide 0.
         assert!(tl.sample(1.5).unwrap().transition.is_none());
+    }
+
+    #[test]
+    fn outro_leaves_into_background() {
+        let mut p = proj(vec![(4.0, 0.0)]);
+        p.outro = Transition { kind: TransitionKind::CrossFade, duration: 1.0 };
+        let tl = Timeline::new(&p);
+        assert_eq!(tl.outro_at(2.0), None);
+        let (k, pr) = tl.outro_at(3.5).unwrap();
+        assert_eq!(k, TransitionKind::CrossFade);
+        assert!((pr - 0.5).abs() < 1e-6);
+        // Clamped to half the last slide.
+        p.outro.duration = 10.0;
+        assert_eq!(Timeline::new(&p).outro_at(1.9), None);
+        assert!(Timeline::new(&p).outro_at(2.1).is_some());
     }
 
     #[test]

@@ -57,8 +57,13 @@ impl Renderer {
         };
 
         let current = self.render_slide(project, spec.slide, spec.local_t, w, h, reveal_texts)?;
-        match spec.transition {
-            None => Ok(current),
+        let bg_frame = || {
+            let mut pm = Pixmap::new(w, h).unwrap();
+            fill_all(&mut pm, project.settings.background);
+            pm
+        };
+        let frame = match spec.transition {
+            None => current,
             Some(tr) => {
                 let previous = match tr.from {
                     Some(idx) => {
@@ -66,14 +71,15 @@ impl Renderer {
                     }
                     // The intro: the first slide arrives out of the
                     // project background.
-                    None => {
-                        let mut pm = Pixmap::new(w, h).unwrap();
-                        fill_all(&mut pm, project.settings.background);
-                        pm
-                    }
+                    None => bg_frame(),
                 };
-                Ok(transitions::blend(previous, current, tr.kind, tr.progress))
+                transitions::blend(previous, current, tr.kind, tr.progress)
             }
+        };
+        // The outro: the film leaves into the background at the very end.
+        match timeline.outro_at(t) {
+            Some((kind, progress)) => Ok(transitions::blend(frame, bg_frame(), kind, progress)),
+            None => Ok(frame),
         }
     }
 

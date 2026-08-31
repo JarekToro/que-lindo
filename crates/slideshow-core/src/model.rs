@@ -21,6 +21,10 @@ pub struct Project {
     pub slides: Vec<Slide>,
     #[serde(default)]
     pub audio: Vec<AudioTrack>,
+    /// How the film ends: the last slide leaves into the background over
+    /// this transition. Cut (the default) ends hard.
+    #[serde(default = "Transition::cut")]
+    pub outro: Transition,
 }
 
 fn default_version() -> u32 {
@@ -34,6 +38,7 @@ impl Default for Project {
             settings: Settings::default(),
             slides: Vec::new(),
             audio: Vec::new(),
+            outro: Transition::cut(),
         }
     }
 }

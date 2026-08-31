@@ -1426,6 +1426,18 @@ export default function Timeline({
                   </button>
                 ),
             )}
+            {project.outro.kind.type !== "cut" && total > 0 && (
+              <button
+                className="seam-marker"
+                style={vertical ? { top: total * PX_PER_SEC } : { left: total * PX_PER_SEC }}
+                title={`Ends with ${TRANSITION_NAMES[project.outro.kind.type]?.toLowerCase() ?? "a fade"} · ${project.outro.duration.toFixed(1)}s`}
+                onClick={() => selectSlide(slides.length - 1)}
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                  <path d="M5 0 L10 5 L5 10 L0 5 Z" fill="currentColor" />
+                </svg>
+              </button>
+            )}
             <div
               className="playhead"
               style={vertical ? { top: time * PX_PER_SEC } : { left: time * PX_PER_SEC }}

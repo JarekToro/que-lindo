@@ -6,6 +6,8 @@ export interface Project {
   settings: Settings;
   slides: Slide[];
   audio: AudioTrack[];
+  /** How the film ends: the last slide leaves into the background. */
+  outro: Transition;
 }
 
 export interface Settings {
