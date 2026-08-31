@@ -12,6 +12,14 @@ tribute videos, useful for any slideshow.
 - **One compositor for preview and export** — what you scrub in the app is
   pixel-for-pixel what ffmpeg encodes.
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Title card](docs/screenshots/01-title.png) | ![Portrait over blur](docs/screenshots/02-portrait.png) |
+| ![Grid collage](docs/screenshots/03-grid.png) | ![Featured layout + inspector](docs/screenshots/04-featured.png) |
+| ![Video cell](docs/screenshots/05-video.png) | ![Export dialog](docs/screenshots/06-export.png) |
+
 ## Layout
 
 ```
