@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { listFonts } from "../api";
-import { defaultText, lowerThird } from "../presets";
+import { autoLayout, defaultText, lowerThird } from "../presets";
 import { useEditor } from "../store";
 import type {
   Anchor,
@@ -109,6 +109,28 @@ function Num({
   );
 }
 
+/** A row of outcome-level verb buttons. */
+function Verbs({
+  label,
+  options,
+}: {
+  label: string;
+  options: { label: string; active: boolean; onPick: () => void }[];
+}) {
+  return (
+    <div className="verb-group" role="group" aria-label={label}>
+      <span className="verb-label">{label}</span>
+      <div className="verb-row">
+        {options.map((o) => (
+          <button key={o.label} className={o.active ? "on" : ""} onClick={o.onPick}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Inspector() {
   const project = useEditor((s) => s.project);
   const index = useEditor((s) => s.selectedSlide);
@@ -148,8 +170,141 @@ export default function Inspector() {
   const layoutValue =
     LAYOUTS.findIndex((l) => JSON.stringify(l.make(slide.cells.length)) === JSON.stringify(slide.layout));
 
+  // ---- the outcome panel: 3–5 verbs for what is selected ----
+  const sameKind = (a: TransitionKind, b: TransitionKind) => a.type === b.type;
+  const setKind = (kind: TransitionKind) =>
+    updateSlide(index, { transition: { ...slide.transition, kind } });
+  const setMotion = (ci: number, label: string) => {
+    const m = MOTIONS.find((m) => m.label === label);
+    if (m) patchCell(ci, { motion: m.value(slide.cells[ci]) });
+  };
+  const motionVerbs = (ci: number) =>
+    MOTIONS.map((m) => ({
+      label: m.label === "None" ? "Still" : m.label,
+      active: motionLabel(slide.cells[ci].motion) === m.label,
+      onPick: () => setMotion(ci, m.label),
+    }));
+
+  const focusText = selectedText !== null ? slide.texts[selectedText] : undefined;
+  const focusCell = selectedCell !== null ? slide.cells[selectedCell] : undefined;
+  const isGroup = slide.cells.length > 1;
+
+  const groupLayouts: { label: string; make: () => Layout }[] = [
+    { label: "Auto", make: () => autoLayout(slide.cells.length) },
+    { label: "Grid", make: () => ({ type: "grid", rows: 2, cols: Math.ceil(slide.cells.length / 2) }) },
+    { label: "Featured", make: () => ({ type: "featured", side: "left", ratio: 0.62 }) },
+    { label: "Strip", make: () => ({ type: "columns", weights: [] }) },
+  ];
+
+  const outcome = (
+    <div className="outcome">
+      <div className="outcome-head">
+        {focusText
+          ? `Text on slide ${index + 1}`
+          : focusCell
+            ? `Photo ${selectedCell! + 1} of ${slide.cells.length}`
+            : isGroup
+              ? `Slide ${index + 1} · group of ${slide.cells.length}`
+              : `Slide ${index + 1}`}
+        {(focusText || focusCell) && (
+          <button
+            className="ghost"
+            title="Back to the slide"
+            onClick={() => {
+              selectCell(null);
+              selectText(null);
+            }}
+          >
+            ← Slide
+          </button>
+        )}
+      </div>
+
+      {focusText ? (
+        <>
+          <textarea
+            rows={2}
+            value={focusText.text}
+            onChange={(e) => patchText(selectedText!, { text: e.target.value })}
+          />
+          <Verbs
+            label="Size"
+            options={[
+              { label: "Smaller", active: false, onPick: () => patchText(selectedText!, { size: Math.max(0.02, focusText.size - 0.01) }) },
+              { label: "Bigger", active: false, onPick: () => patchText(selectedText!, { size: Math.min(0.3, focusText.size + 0.01) }) },
+            ]}
+          />
+          <Verbs
+            label={`Appears at ${focusText.start.toFixed(1)}s`}
+            options={[
+              { label: "Sooner", active: false, onPick: () => patchText(selectedText!, { start: Math.max(0, focusText.start - 0.5) }) },
+              { label: "Later", active: false, onPick: () => patchText(selectedText!, { start: focusText.start + 0.5 }) },
+            ]}
+          />
+        </>
+      ) : focusCell ? (
+        <>
+          <Verbs label="Motion" options={motionVerbs(selectedCell!)} />
+          <Verbs
+            label="Fit"
+            options={[
+              { label: "Fill", active: focusCell.fit === "cover", onPick: () => patchCell(selectedCell!, { fit: "cover" }) },
+              { label: "Whole photo", active: focusCell.fit === "contain", onPick: () => patchCell(selectedCell!, { fit: "contain" }) },
+            ]}
+          />
+        </>
+      ) : (
+        <>
+          {slide.cells.length === 1 && <Verbs label="Motion" options={motionVerbs(0)} />}
+          {isGroup && (
+            <Verbs
+              label="Arrangement"
+              options={groupLayouts.map((g) => ({
+                label: g.label,
+                active: JSON.stringify(g.make()) === JSON.stringify(slide.layout),
+                onPick: () => updateSlide(index, { layout: g.make() }),
+              }))}
+            />
+          )}
+          <Verbs
+            label={`On screen ${slide.duration.toFixed(1)}s`}
+            options={[
+              { label: "Shorter", active: false, onPick: () => updateSlide(index, { duration: Math.max(1, slide.duration - 1) }) },
+              { label: "Longer", active: false, onPick: () => updateSlide(index, { duration: Math.min(120, slide.duration + 1) }) },
+            ]}
+          />
+          {index > 0 && (
+            <Verbs
+              label="Arrives by"
+              options={[
+                { label: "Cut", active: sameKind(slide.transition.kind, { type: "cut" }), onPick: () => setKind({ type: "cut" }) },
+                { label: "Fade", active: sameKind(slide.transition.kind, { type: "cross_fade" }), onPick: () => setKind({ type: "cross_fade" }) },
+                { label: "Black", active: slide.transition.kind.type === "fade_black" || slide.transition.kind.type === "fade_white", onPick: () => setKind({ type: "fade_black" }) },
+                { label: "Slide", active: slide.transition.kind.type === "slide", onPick: () => setKind({ type: "slide", dir: "left" }) },
+                { label: "Wipe", active: slide.transition.kind.type === "wipe", onPick: () => setKind({ type: "wipe", dir: "left" }) },
+              ]}
+            />
+          )}
+          {slide.texts.length > 0 && (
+            <Verbs
+              label="Text"
+              options={slide.texts.slice(0, 3).map((t, ti) => ({
+                label: t.text.trim() ? `“${t.text.slice(0, 14)}${t.text.length > 14 ? "…" : ""}”` : t.role,
+                active: false,
+                onPick: () => selectText(ti),
+              }))}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+
   return (
     <aside className="inspector">
+      {outcome}
+      <details className="values">
+        <summary>Values</summary>
       <details open>
         <summary>Slide</summary>
         <label className="field">
@@ -299,7 +454,7 @@ export default function Inspector() {
             )}
           </div>
         ))}
-        {slide.cells.length === 0 && <p className="hint">Drop media from the bin onto this slide.</p>}
+        {slide.cells.length === 0 && <p className="hint">Drop a photo from the timeline or shelf onto this slide.</p>}
       </details>
 
       <details open>
@@ -409,7 +564,7 @@ export default function Inspector() {
             </label>
           </div>
         ))}
-        {project.audio.length === 0 && <p className="hint">Add music from the media bin (+ Music).</p>}
+        {project.audio.length === 0 && <p className="hint">Add music from the “Not used” shelf (+ Music).</p>}
       </details>
 
       <details>
@@ -424,6 +579,7 @@ export default function Inspector() {
             onChange={(e) => mutate((p) => ({ ...p, settings: { ...p.settings, background: e.target.value } }))}
           />
         </label>
+      </details>
       </details>
     </aside>
   );

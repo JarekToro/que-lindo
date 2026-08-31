@@ -85,6 +85,22 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 }
 .inspector details { border-bottom: 1px solid var(--line); padding: 4px 0 10px; }
 .inspector summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+.inspector details.values { border-bottom: none; }
+.inspector details.values > summary { color: var(--muted); }
+.inspector details.values[open] > summary { color: var(--text); }
+.inspector details.values > details { margin-left: 2px; }
+
+/* The outcome panel: a few verbs for the current selection. */
+.outcome { padding: 4px 0 12px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.outcome-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-weight: 600; padding: 4px 0 10px;
+}
+.outcome textarea { margin-bottom: 8px; }
+.verb-group { margin: 0 0 10px; }
+.verb-label { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+.verb-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.verb-row button { padding: 4px 9px; }
 .field { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 6px 0; }
 .field > span:first-child { color: var(--muted); }
 .field-input { display: flex; align-items: center; gap: 4px; }
