@@ -1,0 +1,15 @@
+[package]
+name = "slideshow-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "slideshow"
+path = "src/main.rs"
+
+[dependencies]
+slideshow-core = { path = "../slideshow-core" }
+anyhow.workspace = true
+serde_json.workspace = true
+clap.workspace = true

@@ -1,0 +1,9 @@
+/target
+node_modules
+dist
+app/src-tauri/target
+app/src-tauri/binaries/ffmpeg*
+app/src-tauri/binaries/ffprobe*
+/examples/media
+/examples/out
+*.mp4
