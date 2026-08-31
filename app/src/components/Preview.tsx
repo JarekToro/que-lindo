@@ -23,8 +23,8 @@ export default function Preview() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hasFrame, setHasFrame] = useState(false);
   const inFlight = useRef(false);
-  const wanted = useRef({ time: 0, rev: 0 });
-  const served = useRef({ time: -1, rev: -1 });
+  const wanted = useRef({ time: 0, rev: 0, reveal: false });
+  const served = useRef({ time: -1, rev: -1, reveal: false });
 
   const scale = project.settings.width > 2000 ? 0.33 : 0.5;
 
@@ -36,11 +36,12 @@ export default function Preview() {
       let failures = 0;
       while (
         served.current.time !== wanted.current.time ||
-        served.current.rev !== wanted.current.rev
+        served.current.rev !== wanted.current.rev ||
+        served.current.reveal !== wanted.current.reveal
       ) {
         const target = { ...wanted.current };
         try {
-          const frame = await renderPreview(target.time, scale);
+          const frame = await renderPreview(target.time, scale, target.reveal);
           const canvas = canvasRef.current;
           if (canvas) {
             if (canvas.width !== frame.width) canvas.width = frame.width;
@@ -69,11 +70,18 @@ export default function Preview() {
     }
   };
 
+  // While a text on the shown slide is being edited, the frame reveals every
+  // overlay at full opacity so placement is visible before its fade-in.
+  const editingText =
+    !playing &&
+    selectedText !== null &&
+    useEditor.getState().selectedSlide === slideAt(timing, time);
+
   useEffect(() => {
-    wanted.current = { time, rev };
+    wanted.current = { time, rev, reveal: editingText };
     void pump();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [time, rev, scale]);
+  }, [time, rev, scale, editingText]);
 
   // Playback: audio is the clock. The mix (same plan as export) plays through
   // an AudioBufferSourceNode and `time` chases audioContext.currentTime, so
