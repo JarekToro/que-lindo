@@ -7,3 +7,18 @@ app/src-tauri/binaries/ffprobe*
 /examples/media
 /examples/out
 *.mp4
+
+# Claude Code / Impeccable
+# The impeccable skill and its hook (.claude/settings.json) are committed on
+# purpose so every session and contributor gets the same design tooling.
+# Machine-local settings and Impeccable's runtime state are not.
+.claude/settings.local.json
+.impeccable/config.local.json
+.impeccable/hook.cache.json
+.impeccable/hook.pending.json
+.impeccable/critique/
+.impeccable/mocks/
+.impeccable-live/
+# Live mode: keep the one-time project config, drop the per-run state.
+.impeccable/live/*
+!.impeccable/live/config.json
