@@ -7,3 +7,18 @@ app/src-tauri/binaries/ffprobe*
 /examples/media
 /examples/out
 *.mp4
+
+# Claude Code
+
+
+
+.claude/settings.local.json
+
+
+
+
+
+
+
+
+
