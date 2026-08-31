@@ -29,7 +29,8 @@ import type { Cell, MediaInfo, MediaItem, Slide } from "../types";
 type DragPayload =
   | { kind: "slide"; index: number }
   | { kind: "media"; path: string }
-  | { kind: "member"; slide: number; cell: number };
+  | { kind: "member"; slide: number; cell: number }
+  | { kind: "text" };
 
 type MenuEntry = { label: string; disabled?: boolean; onPick: () => void } | "sep";
 
@@ -629,27 +630,7 @@ export default function Timeline({
         entries.push({ label: `Split into ${s.cells.length} slides`, onPick: () => splitApart(i) });
         entries.push("sep");
       }
-      entries.push({
-        label: "Add title on this slide",
-        onPick: () => {
-          const text = defaultText({
-            text: "Title",
-            role: "title",
-            size: 0.08,
-            anchor: "center",
-            offset: [0, 0],
-            fade: 0.6,
-          });
-          mutate((p) => ({
-            ...p,
-            slides: p.slides.map((sl, j) => (j === i ? { ...sl, texts: [...sl.texts, text] } : sl)),
-          }));
-          // Seek so the frame shows the slide being titled — the drag handle
-          // on the frame edits what the frame displays.
-          selectSlide(i, true);
-          selectText(s.texts.length);
-        },
-      });
+      entries.push({ label: "Add title on this slide", onPick: () => addTitle(i) });
       entries.push({ label: "Duplicate", onPick: () => duplicate(i) });
       entries.push({ label: "Add blank slide after", onPick: () => insertSlides(i + 1, [defaultSlide()]) });
       entries.push("sep");
@@ -685,7 +666,7 @@ export default function Timeline({
   const dragStart = useRef<{ payload: DragPayload; x: number; y: number } | null>(null);
   const dropRef = useRef<DropZone | null>(null);
   const overRef = useRef<{ grid: boolean; shelf: boolean }>({ grid: false, shelf: false });
-  const [ghost, setGhost] = useState<{ x: number; y: number; label: string } | null>(null);
+  const [ghost, setGhost] = useState<{ x: number; y: number; label: string; kind: DragPayload["kind"] } | null>(null);
   const [shelfHot, setShelfHot] = useState(false);
 
   const setDropBoth = (z: DropZone | null) => {
@@ -699,6 +680,7 @@ export default function Timeline({
       return s && s.cells.length > 1 ? `Group of ${s.cells.length}` : `Slide ${p.index + 1}`;
     }
     if (p.kind === "media") return p.path.replace(/^.*[/\\]/, "");
+    if (p.kind === "text") return "Title";
     return "Photo";
   };
 
@@ -724,6 +706,11 @@ export default function Timeline({
     const i = Number(cardEl.dataset.index);
     if (Number.isNaN(i)) {
       setDropBoth(null);
+      return;
+    }
+    if (payload.kind === "text") {
+      // A title lands on the whole card — photo, group, or blank alike.
+      setDropBoth({ kind: "bind", index: i });
       return;
     }
     const r = cardEl.getBoundingClientRect();
@@ -757,12 +744,32 @@ export default function Timeline({
     }
   };
 
+  /** Add a centered title to slide `i`, show it in the frame, open its text. */
+  const addTitle = (i: number) => {
+    const s = slides[i];
+    if (!s) return;
+    const text = defaultText({
+      text: "Title",
+      role: "title",
+      size: 0.08,
+      anchor: "center",
+      offset: [0, 0],
+      fade: 0.6,
+    });
+    mutate((p) => ({
+      ...p,
+      slides: p.slides.map((sl, j) => (j === i ? { ...sl, texts: [...sl.texts, text] } : sl)),
+    }));
+    selectSlide(i, true);
+    selectText(s.texts.length);
+  };
+
   const moveDrag = (e: React.PointerEvent) => {
     const st = dragStart.current;
     if (!st) return;
     if (!ghost && Math.hypot(e.clientX - st.x, e.clientY - st.y) < 5) return;
     if (st.payload.kind === "slide") setDragging(st.payload.index);
-    setGhost({ x: e.clientX, y: e.clientY, label: dragLabel(st.payload) });
+    setGhost({ x: e.clientX, y: e.clientY, label: dragLabel(st.payload), kind: st.payload.kind });
     updateDragTarget(e.clientX, e.clientY, st.payload);
   };
 
@@ -781,6 +788,10 @@ export default function Timeline({
     const p = st.payload;
     if (p.kind === "member") {
       splitMember(p.slide, p.cell);
+      return;
+    }
+    if (p.kind === "text") {
+      if (zone?.kind === "bind") addTitle(zone.index);
       return;
     }
     if (p.kind === "slide") {
@@ -992,7 +1003,7 @@ export default function Timeline({
           slide={s}
           thumbs={thumbs}
           aspect={cardAspect}
-          receiving={isReceiving}
+          receiving={isReceiving && ghost?.kind !== "text"}
           fill={proportional && vertical}
         />
         {s.cells.length > 1 && <span className="card-count">{s.cells.length}</span>}
@@ -1079,6 +1090,17 @@ export default function Timeline({
         {face !== "time" && (
           <span className="hint">
             {slides.length} slide{slides.length === 1 ? "" : "s"}
+          </span>
+        )}
+        {face !== "time" && (
+          <span
+            className="title-chip"
+            title="Drag onto a photo or group to put a title on it"
+            onPointerDown={(e) => beginDrag(e, { kind: "text" })}
+            onPointerMove={moveDrag}
+            onPointerUp={endDrag}
+          >
+            T Title
           </span>
         )}
         {face === "time" ? (
