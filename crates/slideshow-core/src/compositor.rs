@@ -32,6 +32,21 @@ impl Renderer {
         t: f64,
         scale: f32,
     ) -> Result<Pixmap> {
+        self.render_frame_opts(project, timeline, t, scale, false)
+    }
+
+    /// Like `render_frame`; `reveal_texts` draws every text overlay at full
+    /// opacity regardless of its timing — the editing view uses it so a
+    /// title being placed is visible even before its fade-in. Export never
+    /// sets it.
+    pub fn render_frame_opts(
+        &mut self,
+        project: &Project,
+        timeline: &Timeline,
+        t: f64,
+        scale: f32,
+        reveal_texts: bool,
+    ) -> Result<Pixmap> {
         let w = scaled_dim(project.settings.width, scale);
         let h = scaled_dim(project.settings.height, scale);
 
@@ -41,11 +56,12 @@ impl Renderer {
             return Ok(pm);
         };
 
-        let current = self.render_slide(project, spec.slide, spec.local_t, w, h)?;
+        let current = self.render_slide(project, spec.slide, spec.local_t, w, h, reveal_texts)?;
         match spec.transition {
             None => Ok(current),
             Some(tr) => {
-                let previous = self.render_slide(project, tr.from, tr.from_local_t, w, h)?;
+                let previous =
+                    self.render_slide(project, tr.from, tr.from_local_t, w, h, reveal_texts)?;
                 Ok(transitions::blend(previous, current, tr.kind, tr.progress))
             }
         }
@@ -58,6 +74,7 @@ impl Renderer {
         local_t: f64,
         w: u32,
         h: u32,
+        reveal_texts: bool,
     ) -> Result<Pixmap> {
         let slide = &project.slides[idx];
         let mut pm = Pixmap::new(w, h).unwrap();
@@ -91,7 +108,8 @@ impl Renderer {
         }
 
         for overlay in &slide.texts {
-            let opacity = overlay.opacity_at(local_t, slide.duration);
+            let opacity =
+                if reveal_texts { 1.0 } else { overlay.opacity_at(local_t, slide.duration) };
             self.text.draw_overlay(&mut pm, overlay, opacity);
         }
         Ok(pm)

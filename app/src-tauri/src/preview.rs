@@ -29,6 +29,8 @@ pub struct CurrentDoc {
 pub struct Job {
     pub time: f64,
     pub scale: f32,
+    /// Draw text overlays at full opacity (the editing view).
+    pub reveal_texts: bool,
     pub reply: Sender<Result<Arc<Vec<u8>>, String>>,
 }
 
@@ -41,6 +43,7 @@ struct Key {
     rev: u64,
     qtime: u64,
     scale_milli: u32,
+    reveal_texts: bool,
 }
 
 impl Key {
@@ -49,6 +52,7 @@ impl Key {
             rev,
             qtime: (job.time.max(0.0) * QUANT_HZ).round() as u64,
             scale_milli: (job.scale * 1000.0).round() as u32,
+            reveal_texts: job.reveal_texts,
         }
     }
 
@@ -169,7 +173,13 @@ pub fn spawn_render_thread(
                     // rest of the session: catch it, rebuild the renderer
                     // (its caches may be mid-mutation), and keep serving.
                     let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        renderer.render_frame(&project, &timeline, key.render_time(), newest.scale)
+                        renderer.render_frame_opts(
+                            &project,
+                            &timeline,
+                            key.render_time(),
+                            newest.scale,
+                            newest.reveal_texts,
+                        )
                     }));
                     match rendered {
                         Err(_) => {

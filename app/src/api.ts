@@ -48,9 +48,14 @@ export interface PreviewFrame {
 /**
  * Render a preview frame (same compositor as export). Raw bytes over binary
  * IPC: 8-byte header (width u32 LE, height u32 LE) + straight-alpha RGBA.
+ * `revealTexts` draws overlays at full opacity — the editing view only.
  */
-export const renderPreview = async (time: number, scale: number): Promise<PreviewFrame> => {
-  const buf = await invoke<ArrayBuffer>("render_preview", { time, scale });
+export const renderPreview = async (
+  time: number,
+  scale: number,
+  revealTexts = false,
+): Promise<PreviewFrame> => {
+  const buf = await invoke<ArrayBuffer>("render_preview", { time, scale, revealTexts });
   const view = new DataView(buf);
   return {
     width: view.getUint32(0, true),
