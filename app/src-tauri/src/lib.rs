@@ -343,8 +343,31 @@ pub fn run() {
         fonts: Mutex::new(None),
     };
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
+    // `mut` is only taken by the optional MCP plugin registration below.
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+
+    // Opt-in via the `mcp` cargo feature (`npm run dev:mcp`). Without it the
+    // crate is not in the dependency graph at all, so nothing to strip later.
+    #[cfg(feature = "mcp")]
+    {
+        builder = builder
+            .plugin(tauri_plugin_mcp::init_with_config(
+                tauri_plugin_mcp::PluginConfig::new("Slideshow Studio".to_string())
+                    .start_socket_server(true)
+                    .socket_path("/tmp/slideshow-studio-mcp.sock".into()),
+            ))
+            // The capability is granted here rather than from `capabilities/`,
+            // which tauri-build scans unconditionally -- `mcp:default` does not
+            // exist when the feature is off, and a stale file would fail the build.
+            .setup(|app| {
+                use tauri::Manager;
+                app.add_capability(include_str!("../mcp-capability.json"))?;
+                Ok(())
+            });
+    }
+
+    builder
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             check_ffmpeg,
