@@ -4,7 +4,6 @@
 mod preview;
 
 use anyhow::Context;
-use base64::Engine;
 use serde::Serialize;
 use slideshow_core::export::{CancelFlag, ExportOptions};
 use slideshow_core::{Ffmpeg, Project, Timeline};
@@ -12,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use tauri::ipc::Response;
 use tauri::{Emitter, Manager, State};
 
 pub struct AppState {
@@ -70,8 +70,6 @@ struct Span {
 struct ImportedMedia {
     path: String,
     info: slideshow_core::MediaInfo,
-    /// data:image/png;base64 thumbnail (best effort).
-    thumb: Option<String>,
 }
 
 fn timing_of(project: &Project) -> Timing {
@@ -105,15 +103,16 @@ fn check_ffmpeg(state: State<AppState>) -> FfmpegStatus {
     }
 }
 
-/// Store the latest project; preview URLs render against this revision.
+/// Store the latest project; preview frames render (and cache) against this
+/// revision.
 #[tauri::command]
 fn set_project(state: State<AppState>, project: Project, rev: u64) -> Timing {
     let timing = timing_of(&project);
     let timeline = Timeline::new(&project);
-    let _ = rev; // revision only matters to the frontend
     *state.current.lock().unwrap() = Some(preview::CurrentDoc {
         project: Arc::new(project),
         timeline: Arc::new(timeline),
+        rev,
     });
     timing
 }
@@ -148,8 +147,26 @@ fn probe_media(state: State<AppState>, path: String) -> Result<ImportedMedia, St
     }
     let ffmpeg = state.ffmpeg.clone();
     let info = probe_any(&p, ffmpeg.as_ref()).map_err(|e| format!("{e:#}"))?;
-    let thumb = make_thumb(&p, &info, ffmpeg.as_ref()).ok();
-    Ok(ImportedMedia { path, info, thumb })
+    Ok(ImportedMedia { path, info })
+}
+
+/// Thumbnail as raw PNG bytes. `is_image`/`duration` come from a prior
+/// `probe_media` so this never re-probes the file.
+#[tauri::command]
+async fn media_thumb(
+    state: State<'_, AppState>,
+    path: String,
+    is_image: bool,
+    duration: f64,
+) -> Result<Response, String> {
+    let ffmpeg = state.ffmpeg.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        make_thumb(Path::new(&path), is_image, duration, ffmpeg.as_ref())
+            .map(Response::new)
+            .map_err(|e| format!("{e:#}"))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn probe_any(path: &Path, ffmpeg: Option<&Ffmpeg>) -> anyhow::Result<slideshow_core::MediaInfo> {
@@ -174,18 +191,19 @@ fn probe_any(path: &Path, ffmpeg: Option<&Ffmpeg>) -> anyhow::Result<slideshow_c
 
 fn make_thumb(
     path: &Path,
-    info: &slideshow_core::MediaInfo,
+    is_image: bool,
+    duration: f64,
     ffmpeg: Option<&Ffmpeg>,
-) -> anyhow::Result<String> {
-    let png: Vec<u8> = if info.is_image {
+) -> anyhow::Result<Vec<u8>> {
+    if is_image {
         let img = image::open(path)?;
         let thumb = img.thumbnail(240, 240);
         let mut buf = std::io::Cursor::new(Vec::new());
         thumb.to_rgba8().write_to(&mut buf, image::ImageFormat::Png)?;
-        buf.into_inner()
-    } else if info.has_video {
+        Ok(buf.into_inner())
+    } else {
         let ffmpeg = ffmpeg.context("ffmpeg needed for video thumbnail")?;
-        let at = (info.duration * 0.1).clamp(0.0, 5.0);
+        let at = (duration * 0.1).clamp(0.0, 5.0);
         let out = Command::new(&ffmpeg.ffmpeg)
             .args(["-v", "error", "-ss", &format!("{at:.2}")])
             .arg("-i")
@@ -195,28 +213,24 @@ fn make_thumb(
             .stderr(Stdio::null())
             .output()?;
         anyhow::ensure!(out.status.success() && !out.stdout.is_empty(), "thumbnail failed");
-        out.stdout
-    } else {
-        anyhow::bail!("no thumbnail for audio");
-    };
-    Ok(format!(
-        "data:image/png;base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(png)
-    ))
+        Ok(out.stdout)
+    }
 }
 
-/// Render a preview frame (same compositor as export) as a data URL.
+/// Render a preview frame (same compositor as export). Raw bytes: 8-byte
+/// header (width u32 LE, height u32 LE) + straight-alpha RGBA.
 #[tauri::command]
 async fn render_preview(
     state: State<'_, AppState>,
     time: f64,
     scale: f32,
-) -> Result<String, String> {
+) -> Result<Response, String> {
     let (tx, rx) = std::sync::mpsc::channel();
     state.preview_tx.send(preview::Job { time, scale, reply: tx });
-    tauri::async_runtime::spawn_blocking(move || rx.recv().map_err(|e| e.to_string())?)
+    let bytes = tauri::async_runtime::spawn_blocking(move || rx.recv().map_err(|e| e.to_string())?)
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())??;
+    Ok(Response::new((*bytes).clone()))
 }
 
 #[tauri::command]
@@ -376,6 +390,7 @@ pub fn run() {
             load_project,
             save_project,
             probe_media,
+            media_thumb,
             list_fonts,
             render_preview,
             export_video,

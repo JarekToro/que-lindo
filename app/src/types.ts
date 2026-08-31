@@ -145,9 +145,14 @@ export interface MediaInfo {
   rotation: number;
 }
 
-export interface ImportedMedia {
+/** What `probe_media` returns: metadata only, no pixels. */
+export interface ProbedMedia {
   path: string;
   info: MediaInfo;
+}
+
+/** A probed file plus its thumbnail as an object URL (fetched separately). */
+export interface ImportedMedia extends ProbedMedia {
   thumb: string | null;
 }
 

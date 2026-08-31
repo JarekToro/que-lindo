@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { checkFfmpeg, loadProject, onFileDrop, probeMedia, startupProject } from "./api";
+import { checkFfmpeg, loadProject, mediaThumb, onFileDrop, probeMedia, startupProject } from "./api";
 import ExportDialog from "./components/ExportDialog";
 import Filmstrip from "./components/Filmstrip";
 import Inspector from "./components/Inspector";
@@ -30,7 +30,8 @@ export async function importPaths(paths: string[]): Promise<ImportedMedia[]> {
   const results: ImportedMedia[] = [];
   for (const path of paths) {
     try {
-      results.push(await probeMedia(path));
+      const probed = await probeMedia(path);
+      results.push({ ...probed, thumb: await mediaThumb(probed) });
     } catch (e) {
       console.error("import failed", path, e);
     }

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { renderPreview } from "../api";
+import { isSuperseded, renderPreview } from "../api";
 import { slideAt, useEditor } from "../store";
 
 const PLAYBACK_FPS = 12;
 
-/** Scrubbable preview backed by the preview:// protocol (real compositor). */
+/** Scrubbable preview rendered by the real compositor (raw frames over binary IPC). */
 export default function Preview() {
   const time = useEditor((s) => s.time);
   const setTime = useEditor((s) => s.setTime);
@@ -15,7 +15,8 @@ export default function Preview() {
   const selectSlide = useEditor((s) => s.selectSlide);
   const project = useEditor((s) => s.project);
 
-  const [src, setSrc] = useState<string>("");
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [hasFrame, setHasFrame] = useState(false);
   const inFlight = useRef(false);
   const wanted = useRef({ time: 0, rev: 0 });
   const served = useRef({ time: -1, rev: -1 });
@@ -34,11 +35,21 @@ export default function Preview() {
       ) {
         const target = { ...wanted.current };
         try {
-          const url = await renderPreview(target.time, scale);
-          setSrc(url);
+          const frame = await renderPreview(target.time, scale);
+          const canvas = canvasRef.current;
+          if (canvas) {
+            if (canvas.width !== frame.width) canvas.width = frame.width;
+            if (canvas.height !== frame.height) canvas.height = frame.height;
+            canvas
+              .getContext("2d")
+              ?.putImageData(new ImageData(frame.pixels, frame.width, frame.height), 0, 0);
+            setHasFrame(true);
+          }
           served.current = target;
           failures = 0;
         } catch (e) {
+          // A newer request beat this one; loop around for the newest.
+          if (isSuperseded(e)) continue;
           // Likely a startup race (project not posted yet) — retry briefly.
           if (++failures > 20) {
             console.warn("preview giving up", e);
@@ -87,7 +98,8 @@ export default function Preview() {
   return (
     <main className="preview">
       <div className="preview-stage">
-        {src ? <img src={src} alt="preview" /> : <div className="hint">No preview yet</div>}
+        <canvas ref={canvasRef} aria-label="preview" hidden={!hasFrame} />
+        {!hasFrame && <div className="hint">No preview yet</div>}
       </div>
       <div className="transport">
         <button onClick={() => selectSlide(currentSlide - 1)} title="Previous slide">

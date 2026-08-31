@@ -134,9 +134,12 @@ export const useEditor = create<EditorState>((set, get) => ({
     const existing = new Set(get().media.map((m) => m.path));
     const fresh = items.filter((m) => !existing.has(m.path));
     if (fresh.length) set({ media: [...get().media, ...fresh] });
+    // Duplicates carry thumbnails the app will never show again.
+    for (const m of items) if (existing.has(m.path) && m.thumb) URL.revokeObjectURL(m.thumb);
   },
 
   removeMedia(path) {
+    for (const m of get().media) if (m.path === path && m.thumb) URL.revokeObjectURL(m.thumb);
     set({ media: get().media.filter((m) => m.path !== path) });
   },
 
@@ -185,6 +188,10 @@ export const useEditor = create<EditorState>((set, get) => ({
     scheduleSync(get, set);
   },
 }));
+
+// Post the initial project so the first preview request doesn't race an
+// empty backend (it would retry for seconds, then give up until an edit).
+scheduleSync(useEditor.getState, useEditor.setState);
 
 /** Current slide index for a timeline position. */
 export function slideAt(timing: Timing | null, t: number): number {

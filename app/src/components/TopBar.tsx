@@ -1,5 +1,5 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { loadProject, probeMedia, saveProject } from "../api";
+import { loadProject, mediaThumb, probeMedia, saveProject } from "../api";
 import { projectMediaPaths } from "../App";
 import { applyMemorialTheme, emptyProject, endCard, titleCard } from "../presets";
 import { useEditor } from "../store";
@@ -46,7 +46,9 @@ export default function TopBar({
       const p = await loadProject(picked);
       replaceProject(p, { path: picked });
       for (const mp of projectMediaPaths(p)) {
-        probeMedia(mp).then(addMedia1).catch(() => {});
+        probeMedia(mp)
+          .then(async (probed) => addMedia1({ ...probed, thumb: await mediaThumb(probed) }))
+          .catch(() => {});
       }
     } catch (e) {
       alert(`Could not open project:\n${e}`);
