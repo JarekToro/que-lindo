@@ -60,8 +60,18 @@ impl Renderer {
         match spec.transition {
             None => Ok(current),
             Some(tr) => {
-                let previous =
-                    self.render_slide(project, tr.from, tr.from_local_t, w, h, reveal_texts)?;
+                let previous = match tr.from {
+                    Some(idx) => {
+                        self.render_slide(project, idx, tr.from_local_t, w, h, reveal_texts)?
+                    }
+                    // The intro: the first slide arrives out of the
+                    // project background.
+                    None => {
+                        let mut pm = Pixmap::new(w, h).unwrap();
+                        fill_all(&mut pm, project.settings.background);
+                        pm
+                    }
+                };
                 Ok(transitions::blend(previous, current, tr.kind, tr.progress))
             }
         }

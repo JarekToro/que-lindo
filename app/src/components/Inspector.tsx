@@ -273,9 +273,9 @@ export default function Inspector() {
               { label: "Longer", active: false, onPick: () => updateSlide(index, { duration: Math.min(120, slide.duration + 1) }) },
             ]}
           />
-          {index > 0 && (
+          {(
             <Verbs
-              label="Arrives by"
+              label={index === 0 ? "Opens with" : "Arrives by"}
               options={[
                 { label: "Cut", active: sameKind(slide.transition.kind, { type: "cut" }), onPick: () => setKind({ type: "cut" }) },
                 { label: "Fade", active: sameKind(slide.transition.kind, { type: "cross_fade" }), onPick: () => setKind({ type: "cross_fade" }) },
@@ -344,10 +344,10 @@ export default function Inspector() {
           onChange={(v) => updateSlide(index, { margin: v })} />
         <Num label="Gutter" value={slide.gutter} max={0.1} step={0.005}
           onChange={(v) => updateSlide(index, { gutter: v })} />
-        {index > 0 && (
+        {(
           <>
             <label className="field">
-              <span>Transition</span>
+              <span>{index === 0 ? "Opens with" : "Transition"}</span>
               <select
                 value={transitionLabel(slide.transition.kind)}
                 onChange={(e) => {
