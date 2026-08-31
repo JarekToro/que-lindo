@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "settings": { "width": 1280, "height": 720, "fps": 30, "background": "#101014" },
+  "slides": [
+    {
+      "id": "title",
+      "duration": 3.5,
+      "layout": { "type": "single" },
+      "cells": [],
+      "texts": [
+        { "text": "In Loving Memory", "role": "title", "size": 0.12, "anchor": "center", "offset": [0, -0.06], "fade": 0.8 },
+        { "text": "Eleanor May Whitfield", "role": "subtitle", "size": 0.055, "italic": true, "anchor": "center", "offset": [0, 0.06], "start": 0.6, "fade": 0.8 },
+        { "text": "1943 – 2026", "role": "subtitle", "size": 0.04, "anchor": "center", "offset": [0, 0.14], "start": 1.0, "fade": 0.8 }
+      ]
+    },
+    {
+      "id": "portrait-blur",
+      "duration": 4.0,
+      "layout": { "type": "single" },
+      "margin": 0.06,
+      "background": { "type": "blur", "cell": 0, "sigma": 0.02, "dim": 0.35 },
+      "cells": [
+        { "source": { "type": "image", "path": "media/img_TWO-portrait.png" }, "fit": "contain", "corner_radius": 0.012, "border": { "width": 0.004, "color": "#ffffff" } }
+      ],
+      "texts": [
+        { "text": "A portrait, letterboxed over its own blur", "role": "caption", "size": 0.035, "anchor": "bottom_center", "offset": [0, -0.03] }
+      ],
+      "transition": { "kind": { "type": "cross_fade" }, "duration": 1.0 }
+    },
+    {
+      "id": "kenburns",
+      "duration": 4.0,
+      "layout": { "type": "single" },
+      "cells": [
+        { "source": { "type": "image", "path": "media/img_ONE.png" }, "motion": { "type": "zoom", "from": 1.0, "to": 1.25 } }
+      ],
+      "texts": [
+        { "text": "Slow zoom (Ken Burns)", "role": "lower_third", "size": 0.04, "align": "left", "anchor": "bottom_left", "offset": [0.04, -0.06], "box_color": "#00000080" }
+      ],
+      "transition": { "kind": { "type": "fade_black" }, "duration": 1.0 }
+    },
+    {
+      "id": "grid",
+      "duration": 4.0,
+      "layout": { "type": "grid", "rows": 2, "cols": 2 },
+      "margin": 0.04,
+      "gutter": 0.02,
+      "cells": [
+        { "source": { "type": "image", "path": "media/img_THREE.png" }, "corner_radius": 0.01 },
+        { "source": { "type": "image", "path": "media/img_FOUR.png" }, "corner_radius": 0.01 },
+        { "source": { "type": "image", "path": "media/img_FIVE.png" }, "corner_radius": 0.01 },
+        { "source": { "type": "image", "path": "media/img_SIX.png" }, "corner_radius": 0.01 }
+      ],
+      "texts": [
+        { "text": "Grid collage", "role": "caption", "size": 0.04, "anchor": "top_center", "offset": [0, 0.03] }
+      ],
+      "transition": { "kind": { "type": "slide", "dir": "left" }, "duration": 0.8 }
+    },
+    {
+      "id": "featured",
+      "duration": 4.0,
+      "layout": { "type": "featured", "side": "left", "ratio": 0.62 },
+      "margin": 0.04,
+      "gutter": 0.02,
+      "cells": [
+        { "source": { "type": "image", "path": "media/img_ONE.png" }, "corner_radius": 0.01, "motion": { "type": "zoom", "from": 1.0, "to": 1.15 } },
+        { "source": { "type": "image", "path": "media/img_FOUR.png" }, "corner_radius": 0.01 },
+        { "source": { "type": "image", "path": "media/img_FIVE.png" }, "corner_radius": 0.01 }
+      ],
+      "transition": { "kind": { "type": "wipe", "dir": "right" }, "duration": 0.8 }
+    },
+    {
+      "id": "video",
+      "duration": 5.0,
+      "layout": { "type": "columns", "weights": [2, 1] },
+      "margin": 0.04,
+      "gutter": 0.02,
+      "cells": [
+        { "source": { "type": "video", "path": "media/clip.mp4", "start": 0.5, "mute": false }, "corner_radius": 0.01 },
+        { "source": { "type": "image", "path": "media/img_SIX.png" }, "corner_radius": 0.01 }
+      ],
+      "texts": [
+        { "text": "Video beside a photo", "role": "caption", "size": 0.038, "anchor": "bottom_center", "offset": [0, -0.02] }
+      ],
+      "transition": { "kind": { "type": "cross_fade" }, "duration": 1.0 }
+    },
+    {
+      "id": "end",
+      "duration": 4.0,
+      "layout": { "type": "single" },
+      "cells": [],
+      "texts": [
+        { "text": "Forever in our hearts", "role": "title", "italic": true, "size": 0.08, "anchor": "center", "fade": 1.0 }
+      ],
+      "transition": { "kind": { "type": "fade_black" }, "duration": 1.2 }
+    }
+  ],
+  "audio": [
+    { "path": "media/music.mp3", "start": 0.0, "gain_db": -6, "fade_in": 1.5, "fade_out": 3.0, "loop": true }
+  ]
+}
