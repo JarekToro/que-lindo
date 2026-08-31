@@ -20,13 +20,18 @@ export interface EditorState {
   media: MediaItem[];
   time: number;
   playing: boolean;
+  /** Which face the timeline shows: space (arrange) or time. */
+  mode: "arrange" | "time";
 
   past: Project[];
   future: Project[];
 
   // actions
   replaceProject(p: Project, opts?: { path?: string | null; keepHistory?: boolean }): void;
-  mutate(fn: (p: Project) => Project): void;
+  /** `history: false` folds the change into the previous undo step (batch
+   * imports land as one gesture). */
+  mutate(fn: (p: Project) => Project, opts?: { history?: boolean }): void;
+  setMode(mode: "arrange" | "time"): void;
   updateSlide(index: number, patch: Partial<Slide>): void;
   selectSlide(index: number, seek?: boolean): void;
   selectCell(index: number | null): void;
@@ -72,6 +77,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   media: [],
   time: 0,
   playing: false,
+  mode: "arrange",
   past: [],
   future: [],
 
@@ -92,18 +98,23 @@ export const useEditor = create<EditorState>((set, get) => ({
     scheduleSync(get, set);
   },
 
-  mutate(fn) {
+  mutate(fn, opts = {}) {
     const prev = get().project;
     const next = fn(prev);
     if (next === prev) return;
+    const history = opts.history !== false;
     set({
       project: next,
       rev: get().rev + 1,
       dirty: true,
-      past: [...get().past.slice(-UNDO_LIMIT + 1), prev],
+      past: history ? [...get().past.slice(-UNDO_LIMIT + 1), prev] : get().past,
       future: [],
     });
     scheduleSync(get, set);
+  },
+
+  setMode(mode) {
+    set({ mode });
   },
 
   updateSlide(index, patch) {

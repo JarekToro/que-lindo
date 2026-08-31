@@ -2,12 +2,11 @@ import { useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { checkFfmpeg, loadProject, mediaThumb, onFileDrop, probeMedia, startupProject } from "./api";
 import ExportDialog from "./components/ExportDialog";
-import Filmstrip from "./components/Filmstrip";
 import Inspector from "./components/Inspector";
-import MediaBin from "./components/MediaBin";
 import Preview from "./components/Preview";
+import Timeline from "./components/Timeline";
 import TopBar from "./components/TopBar";
-import { audioTrackFor, slideForMedia } from "./presets";
+import { slideForMedia } from "./presets";
 import { useEditor } from "./store";
 import type { FfmpegStatus, ImportedMedia, Project } from "./types";
 
@@ -16,7 +15,7 @@ export const MEDIA_EXTENSIONS = {
   audio: ["mp3", "m4a", "aac", "wav", "flac", "ogg"],
 };
 
-/** Every media file a project references (for seeding the media bin). */
+/** Every media file a project references (for seeding the shelf on open). */
 export function projectMediaPaths(p: Project): string[] {
   const out = new Set<string>();
   for (const s of p.slides)
@@ -29,10 +28,10 @@ export function projectMediaPaths(p: Project): string[] {
 const PROBE_CONCURRENCY = 4;
 
 /**
- * Progressive import: placeholder cards land in the bin immediately, then
- * fill in per file — metadata first, thumbnail behind it. Probing runs on a
- * bounded worker pool so 300 files don't mean 300 sequential ffmpeg spawns.
- * Resolves when everything settled, with the items that imported.
+ * Progressive import: placeholder entries land immediately, then fill in per
+ * file — metadata first, thumbnail behind it. Probing runs on a bounded
+ * worker pool so 300 files don't mean 300 sequential ffmpeg spawns.
+ * Resolves with the successfully imported items in the order given.
  */
 export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
   const state = useEditor.getState();
@@ -41,17 +40,18 @@ export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
   if (!fresh.length) return [];
   state.beginImport(fresh);
 
-  const done: ImportedMedia[] = [];
+  const done: (ImportedMedia | null)[] = fresh.map(() => null);
   let next = 0;
   const worker = async () => {
     while (next < fresh.length) {
-      const path = fresh[next++];
+      const slot = next++;
+      const path = fresh[slot];
       try {
         const probed = await probeMedia(path);
         useEditor.getState().finishImport(path, { info: probed.info });
         const thumb = await mediaThumb(probed);
         useEditor.getState().setThumb(path, thumb);
-        done.push({ ...probed, thumb });
+        done[slot] = { ...probed, thumb };
       } catch (e) {
         console.error("import failed", path, e);
         useEditor.getState().finishImport(path, { error: String(e) });
@@ -60,13 +60,27 @@ export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
   };
   const workers = Math.min(PROBE_CONCURRENCY, fresh.length);
   await Promise.all(Array.from({ length: workers }, () => worker()));
-  return done;
+  return done.filter((m): m is ImportedMedia => m !== null);
+}
+
+/**
+ * Import straight into Arrange: every photo and clip becomes a slide, in the
+ * order dropped, as one undo step. Audio (and anything that fails) stays on
+ * the "Not used" shelf for an explicit decision.
+ */
+export async function importIntoTimeline(paths: string[]): Promise<void> {
+  const items = await importFiles(paths);
+  const visual = items.filter((m) => m.info.is_image || m.info.has_video);
+  if (!visual.length) return;
+  useEditor.getState().mutate((p) => ({
+    ...p,
+    slides: [...p.slides, ...visual.map(slideForMedia)],
+  }));
 }
 
 export default function App() {
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatus | null>(null);
   const [exporting, setExporting] = useState(false);
-  const mutate = useEditor((s) => s.mutate);
   const undo = useEditor((s) => s.undo);
   const redo = useEditor((s) => s.redo);
   const playing = useEditor((s) => s.playing);
@@ -90,10 +104,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // OS file drops land in the media bin; audio also becomes a track offer.
+  // OS file drops go straight into Arrange: photos and clips become slides.
   useEffect(() => {
     const un = onFileDrop((paths) => {
-      void importFiles(paths);
+      void importIntoTimeline(paths);
     });
     return () => {
       un.then((f) => f());
@@ -114,7 +128,11 @@ export default function App() {
       if (e.key === " ") {
         e.preventDefault();
         setPlaying(!playing);
-      } else if (e.key === "ArrowLeft") {
+        return;
+      }
+      // The timeline owns arrows (and more) while focus is inside it.
+      if (target.closest?.(".timeline")) return;
+      if (e.key === "ArrowLeft") {
         selectSlide(selectedSlide - 1);
       } else if (e.key === "ArrowRight") {
         selectSlide(selectedSlide + 1);
@@ -133,23 +151,17 @@ export default function App() {
       ],
     });
     if (!picked) return;
-    void importFiles(Array.isArray(picked) ? picked : [picked]);
+    void importIntoTimeline(Array.isArray(picked) ? picked : [picked]);
   };
-
-  const addAsSlide = (m: ImportedMedia) =>
-    mutate((p) => ({ ...p, slides: [...p.slides, slideForMedia(m)] }));
-  const addAsAudio = (m: ImportedMedia) =>
-    mutate((p) => ({ ...p, audio: [...p.audio, audioTrackFor(m)] }));
 
   return (
     <div className="app">
       <TopBar ffmpeg={ffmpeg} onExport={() => setExporting(true)} />
       <div className="workspace">
-        <MediaBin onImport={importMedia} onAddSlide={addAsSlide} onAddAudio={addAsAudio} />
         <Preview />
         <Inspector />
       </div>
-      <Filmstrip />
+      <Timeline onImport={importMedia} />
       {exporting && <ExportDialog onClose={() => setExporting(false)} ffmpegFound={!!ffmpeg?.found} />}
     </div>
   );
