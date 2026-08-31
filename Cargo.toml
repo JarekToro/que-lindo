@@ -17,6 +17,7 @@ cosmic-text = "0.19"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"] }
 clap = { version = "4.5", features = ["derive"] }
 log = "0.4"
+kamadak-exif = "0.6"
 
 [profile.release]
 lto = "thin"

@@ -12,6 +12,7 @@ tiny-skia.workspace = true
 cosmic-text.workspace = true
 image.workspace = true
 log.workspace = true
+kamadak-exif.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
