@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = ["crates/slideshow-core", "crates/slideshow-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/JarekToro/memorial-slideshow-gen"
+
+[workspace.dependencies]
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tiny-skia = "0.12"
+cosmic-text = "0.19"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"] }
+clap = { version = "4.5", features = ["derive"] }
+log = "0.4"
+
+[profile.release]
+lto = "thin"
+
+# Preview/render speed matters even in dev builds
+[profile.dev.package."*"]
+opt-level = 2
