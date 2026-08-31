@@ -14,8 +14,24 @@ export const LAYOUTS: { label: string; make: (n: number) => Layout }[] = [
 
 export const MOTIONS: { label: string; value: (c: Cell) => Cell["motion"] }[] = [
   { label: "None", value: () => ({ type: "none" }) },
-  { label: "Zoom in", value: () => ({ type: "zoom", from: 1.0, to: 1.15 }) },
-  { label: "Zoom out", value: () => ({ type: "zoom", from: 1.15, to: 1.0 }) },
+  {
+    label: "Zoom in",
+    value: (c) => ({
+      type: "zoom",
+      from: 1.0,
+      to: 1.15,
+      origin: c.motion.type === "zoom" ? c.motion.origin : [0.5, 0.5],
+    }),
+  },
+  {
+    label: "Zoom out",
+    value: (c) => ({
+      type: "zoom",
+      from: 1.15,
+      to: 1.0,
+      origin: c.motion.type === "zoom" ? c.motion.origin : [0.5, 0.5],
+    }),
+  },
   {
     label: "Pan →",
     value: () => ({

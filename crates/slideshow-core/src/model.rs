@@ -340,16 +340,27 @@ pub enum Motion {
     /// Pan/zoom between two normalized crop windows of the *cell content*
     /// over the slide's duration.
     KenBurns { from: NormRect, to: NormRect },
-    /// Centered zoom sugar: 1.0 = no zoom.
-    Zoom { from: f32, to: f32 },
+    /// Zoom sugar: 1.0 = no zoom. `origin` is the focus point of the zoom
+    /// as fractions of the cell content — the point that stays put while
+    /// the window tightens; (0.5, 0.5) is a centered zoom.
+    Zoom {
+        from: f32,
+        to: f32,
+        #[serde(default = "default_zoom_origin")]
+        origin: [f32; 2],
+    },
+}
+
+fn default_zoom_origin() -> [f32; 2] {
+    [0.5, 0.5]
 }
 
 impl Motion {
     pub fn zoom_in(amount: f32) -> Self {
-        Motion::Zoom { from: 1.0, to: amount }
+        Motion::Zoom { from: 1.0, to: amount, origin: default_zoom_origin() }
     }
     pub fn zoom_out(amount: f32) -> Self {
-        Motion::Zoom { from: amount, to: 1.0 }
+        Motion::Zoom { from: amount, to: 1.0, origin: default_zoom_origin() }
     }
 
     /// Crop window at progress `t` (0..1), or None when motionless.
@@ -357,9 +368,18 @@ impl Motion {
         match self {
             Motion::None => None,
             Motion::KenBurns { from, to } => Some(NormRect::lerp(*from, *to, ease_in_out(t))),
-            Motion::Zoom { from, to } => {
+            Motion::Zoom { from, to, origin } => {
                 let z = from + (to - from) * ease_in_out(t);
-                Some(NormRect::zoomed(z))
+                let s = 1.0 / z.max(0.01);
+                if s >= 1.0 {
+                    // Window at or beyond the full content: origin is moot.
+                    return Some(NormRect::zoomed(z));
+                }
+                // Anchor the window so the focus point stays put, clamped to
+                // the content bounds.
+                let x = (origin[0].clamp(0.0, 1.0) * (1.0 - s)).clamp(0.0, 1.0 - s);
+                let y = (origin[1].clamp(0.0, 1.0) * (1.0 - s)).clamp(0.0, 1.0 - s);
+                Some(NormRect { x, y, w: s, h: s })
             }
         }
     }

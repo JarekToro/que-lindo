@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { isSuperseded, renderPreview } from "../api";
+import { layoutRects } from "../layout";
 import { ensureAudioCtx, mixForRev } from "../mixcache";
 import { ANCHOR_POINTS } from "../presets";
 import { slideAt, useEditor } from "../store";
-import type { TextOverlay } from "../types";
+import type { Motion, TextOverlay } from "../types";
 
 const PLAYBACK_FPS = 12;
 
@@ -224,13 +225,107 @@ export default function Preview() {
 
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
+  // ---- zoom focus on the frame: aim where the zoom pushes into ----
+  const selectedCellIdx = useEditor((s) => s.selectedCell);
+  const zoomTarget = (() => {
+    if (playing || !shownSlide || selectedCellIdx === null) return null;
+    if (useEditor.getState().selectedSlide !== currentSlide) return null;
+    const cell = shownSlide.cells[selectedCellIdx];
+    if (!cell || cell.motion.type !== "zoom") return null;
+    const W = project.settings.width;
+    const H = Math.max(project.settings.height, 1);
+    const rects = layoutRects(
+      shownSlide.layout,
+      shownSlide.cells.length,
+      W,
+      H,
+      shownSlide.margin,
+      shownSlide.gutter,
+    );
+    const r = rects[selectedCellIdx];
+    if (!r) return null;
+    return {
+      motion: cell.motion,
+      rect: { x: r.x / W, y: r.y / H, w: r.w / W, h: r.h / H },
+    };
+  })();
+
+  const zoomDrag = useRef<{ startX: number; startY: number; origin: [number, number]; moved: boolean } | null>(null);
+
+  const patchZoomOrigin = (origin: [number, number], history: boolean) => {
+    if (selectedCellIdx === null) return;
+    mutateStore(
+      (p) => ({
+        ...p,
+        slides: p.slides.map((s, i) =>
+          i === currentSlide
+            ? {
+                ...s,
+                cells: s.cells.map((c, j) =>
+                  j === selectedCellIdx && c.motion.type === "zoom"
+                    ? { ...c, motion: { ...(c.motion as Extract<Motion, { type: "zoom" }>), origin } }
+                    : c,
+                ),
+              }
+            : s,
+        ),
+      }),
+      { history },
+    );
+  };
+
+  const moveZoomDrag = (e: React.PointerEvent) => {
+    const d = zoomDrag.current;
+    const frame = overlayRef.current;
+    if (!d || !frame || !(e.buttons & 1) || !zoomTarget) return;
+    const r = frame.getBoundingClientRect();
+    const dx = (e.clientX - d.startX) / Math.max(r.width * zoomTarget.rect.w, 1);
+    const dy = (e.clientY - d.startY) / Math.max(r.height * zoomTarget.rect.h, 1);
+    patchZoomOrigin(
+      [Math.min(1, Math.max(0, d.origin[0] + dx)), Math.min(1, Math.max(0, d.origin[1] + dy))],
+      !d.moved,
+    );
+    d.moved = true;
+  };
+
   return (
     <main className="preview">
       <div className="preview-stage">
         <div className="frame-wrap">
           <canvas ref={canvasRef} aria-label="preview" hidden={!hasFrame} />
-          {hasFrame && !playing && shownSlide && shownSlide.texts.length > 0 && (
+          {hasFrame && !playing && shownSlide && (shownSlide.texts.length > 0 || zoomTarget) && (
             <div className="text-layer" ref={overlayRef}>
+              {zoomTarget && (
+                <button
+                  className="zoom-handle"
+                  style={{
+                    left: `${(zoomTarget.rect.x + zoomTarget.motion.origin[0] * zoomTarget.rect.w) * 100}%`,
+                    top: `${(zoomTarget.rect.y + zoomTarget.motion.origin[1] * zoomTarget.rect.h) * 100}%`,
+                  }}
+                  title="Drag to aim the zoom"
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return;
+                    e.stopPropagation();
+                    zoomDrag.current = {
+                      startX: e.clientX,
+                      startY: e.clientY,
+                      origin: [...zoomTarget.motion.origin] as [number, number],
+                      moved: false,
+                    };
+                    try {
+                      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                    } catch {
+                      // Synthetic pointers have no capturable id.
+                    }
+                  }}
+                  onPointerMove={moveZoomDrag}
+                  onPointerUp={() => {
+                    zoomDrag.current = null;
+                  }}
+                >
+                  ◎
+                </button>
+              )}
               {shownSlide.texts.map((t, ti) => {
                 const pos = handleFor(t);
                 const active = selectedText === ti && currentSlide === useEditor.getState().selectedSlide;

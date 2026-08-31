@@ -50,7 +50,7 @@ export type Fit = "cover" | "contain";
 export type Motion =
   | { type: "none" }
   | { type: "ken_burns"; from: NormRect; to: NormRect }
-  | { type: "zoom"; from: number; to: number };
+  | { type: "zoom"; from: number; to: number; origin: [number, number] };
 
 export interface Border {
   width: number;
