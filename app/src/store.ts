@@ -6,17 +6,31 @@ import type { MediaInfo, MediaItem, Project, Slide, Timing } from "./types";
 const UNDO_LIMIT = 100;
 const UI_PREFS_KEY = "slideshow-ui-prefs";
 
-/** Where the timeline panel docks. */
-export type Dock = "bottom" | "left" | "right";
+/** Where the timeline lives: one docked panel, or split into two (Arrange on
+ * the left, Time at the bottom). */
+export type Dock = "bottom" | "left" | "right" | "split";
 
 export interface UiPrefs {
   dock: Dock;
-  /** Timeline panel size: height when docked bottom, width when docked aside. */
+  /** Timeline panel size: height when docked bottom, width when docked aside.
+   * In split view, the Time panel's height. */
   timelineSize: number;
   inspectorWidth: number;
+  /** Split view: the Arrange panel's width. */
+  arrangeWidth: number;
+  /** Split view: panels hidden independently. */
+  arrangeCollapsed: boolean;
+  timeCollapsed: boolean;
 }
 
-const DEFAULT_UI: UiPrefs = { dock: "bottom", timelineSize: 260, inspectorWidth: 300 };
+const DEFAULT_UI: UiPrefs = {
+  dock: "bottom",
+  timelineSize: 260,
+  inspectorWidth: 300,
+  arrangeWidth: 340,
+  arrangeCollapsed: false,
+  timeCollapsed: false,
+};
 
 function loadUiPrefs(): UiPrefs {
   try {
@@ -25,11 +39,15 @@ function loadUiPrefs(): UiPrefs {
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object") return DEFAULT_UI;
     const p = parsed as Partial<UiPrefs>;
+    const docks: Dock[] = ["bottom", "left", "right", "split"];
     return {
-      dock: p.dock === "left" || p.dock === "right" || p.dock === "bottom" ? p.dock : DEFAULT_UI.dock,
+      dock: docks.includes(p.dock as Dock) ? (p.dock as Dock) : DEFAULT_UI.dock,
       timelineSize: typeof p.timelineSize === "number" ? p.timelineSize : DEFAULT_UI.timelineSize,
       inspectorWidth:
         typeof p.inspectorWidth === "number" ? p.inspectorWidth : DEFAULT_UI.inspectorWidth,
+      arrangeWidth: typeof p.arrangeWidth === "number" ? p.arrangeWidth : DEFAULT_UI.arrangeWidth,
+      arrangeCollapsed: p.arrangeCollapsed === true,
+      timeCollapsed: p.timeCollapsed === true,
     };
   } catch {
     return DEFAULT_UI;

@@ -162,14 +162,26 @@ export default function App() {
 
   const timelineSplitter = (
     <Splitter
-      axis={dock === "bottom" ? "y" : "x"}
+      axis={dock === "bottom" || dock === "split" ? "y" : "x"}
       // Bottom: dragging up grows the panel. Left: dragging right grows it.
       sign={dock === "left" ? 1 : -1}
       value={ui.timelineSize}
-      min={dock === "bottom" ? 140 : 220}
-      max={dock === "bottom" ? 560 : 720}
+      min={dock === "bottom" || dock === "split" ? 140 : 220}
+      max={dock === "bottom" || dock === "split" ? 560 : 720}
       onChange={(v) => setUi({ timelineSize: v })}
       label="Resize timeline panel"
+    />
+  );
+
+  const arrangeSplitter = (
+    <Splitter
+      axis="x"
+      sign={1}
+      value={ui.arrangeWidth}
+      min={220}
+      max={640}
+      onChange={(v) => setUi({ arrangeWidth: v })}
+      label="Resize Arrange panel"
     />
   );
 
@@ -196,30 +208,69 @@ export default function App() {
         {
           "--inspector-w": `${ui.inspectorWidth}px`,
           "--timeline-size": `${ui.timelineSize}px`,
+          "--arrange-w": `${ui.arrangeWidth}px`,
         } as CSSProperties
       }
     >
       <TopBar ffmpeg={ffmpeg} onExport={() => setExporting(true)} />
       <div className={`shell shell-${dock}`}>
-        {dock === "left" && (
+        {dock === "split" ? (
           <>
-            <Timeline onImport={importMedia} />
-            {timelineSplitter}
+            {ui.arrangeCollapsed ? (
+              <button
+                className="panel-rail rail-side"
+                title="Show the Arrange panel"
+                onClick={() => setUi({ arrangeCollapsed: false })}
+              >
+                Arrange
+              </button>
+            ) : (
+              <>
+                <Timeline onImport={importMedia} face="arrange" />
+                {arrangeSplitter}
+              </>
+            )}
+            <div className="shell-main">
+              {workspace}
+              {ui.timeCollapsed ? (
+                <button
+                  className="panel-rail rail-bottom"
+                  title="Show the Time panel"
+                  onClick={() => setUi({ timeCollapsed: false })}
+                >
+                  Time
+                </button>
+              ) : (
+                <>
+                  {timelineSplitter}
+                  <Timeline onImport={importMedia} face="time" />
+                </>
+              )}
+            </div>
           </>
-        )}
-        {dock === "bottom" ? (
-          <div className="shell-main">
-            {workspace}
-            {timelineSplitter}
-            <Timeline onImport={importMedia} />
-          </div>
         ) : (
-          workspace
-        )}
-        {dock === "right" && (
           <>
-            {timelineSplitter}
-            <Timeline onImport={importMedia} />
+            {dock === "left" && (
+              <>
+                <Timeline onImport={importMedia} />
+                {timelineSplitter}
+              </>
+            )}
+            {dock === "bottom" ? (
+              <div className="shell-main">
+                {workspace}
+                {timelineSplitter}
+                <Timeline onImport={importMedia} />
+              </div>
+            ) : (
+              workspace
+            )}
+            {dock === "right" && (
+              <>
+                {timelineSplitter}
+                <Timeline onImport={importMedia} />
+              </>
+            )}
           </>
         )}
       </div>

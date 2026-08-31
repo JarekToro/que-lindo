@@ -102,10 +102,26 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 /* ---- timeline: the mode-carrying surface under the frame ---- */
 
 .timeline { display: flex; flex-direction: column; background: var(--panel); }
-.dock-bottom .timeline { height: var(--timeline-size, 260px); min-height: 132px; }
+.dock-bottom .timeline { height: min(var(--timeline-size, 260px), 60vh); min-height: 132px; }
 .dock-left .timeline, .dock-right .timeline {
-  width: var(--timeline-size, 320px); min-width: 200px; flex-shrink: 0;
+  width: min(var(--timeline-size, 320px), 55vw); min-width: 200px; flex-shrink: 0;
 }
+.dock-split .timeline.face-arrange {
+  width: min(var(--arrange-w, 340px), 50vw); min-width: 200px; flex-shrink: 0;
+}
+.dock-split .timeline.face-time {
+  height: min(var(--timeline-size, 260px), 50vh); min-height: 110px;
+}
+.panel-label { font-weight: 600; color: var(--muted); }
+
+/* Collapsed panels shrink to a rail that brings them back. */
+.panel-rail {
+  flex-shrink: 0; border-radius: 0; border: none; background: var(--panel);
+  color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+}
+.panel-rail:hover { color: var(--accent); border: none; }
+.rail-side { width: 26px; writing-mode: vertical-rl; padding: 10px 0; border-right: 1px solid var(--line); }
+.rail-bottom { height: 24px; padding: 0 10px; border-top: 1px solid var(--line); }
 .timeline-bar {
   display: flex; align-items: center; gap: 10px; padding: 6px 10px;
   border-bottom: 1px solid var(--line); flex-shrink: 0; flex-wrap: wrap; row-gap: 4px;
@@ -207,8 +223,16 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   position: relative; border-radius: 8px; cursor: grab;
   border: 1px solid var(--line); background: var(--panel-2); padding: 3px;
   transition: border-color 120ms ease-out, box-shadow 120ms ease-out, opacity 120ms ease-out;
-  outline: none;
+  outline: none; user-select: none; -webkit-user-select: none; touch-action: none;
 }
+.band-member, .shelf-item { user-select: none; -webkit-user-select: none; touch-action: none; }
+.drag-ghost {
+  position: fixed; z-index: 200; pointer-events: none;
+  background: var(--panel-2); border: 1px solid var(--accent); color: var(--text);
+  border-radius: 6px; padding: 3px 8px; font-size: 11px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.shelf.drop-hot { outline: 1px solid var(--accent); outline-offset: -1px; }
 .slide-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .slide-card:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
 .slide-card.dragging { opacity: 0.4; }

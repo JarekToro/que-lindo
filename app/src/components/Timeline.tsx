@@ -23,9 +23,11 @@ import type { Cell, MediaInfo, MediaItem, Slide } from "../types";
  * the proportional view) stretches the same cards to their durations.
  */
 
-const SLIDE_MIME = "application/x-slide-index";
-const MEDIA_MIME = "application/x-media-path";
-const MEMBER_MIME = "application/x-group-member";
+/** What a pointer drag is carrying. */
+type DragPayload =
+  | { kind: "slide"; index: number }
+  | { kind: "media"; path: string }
+  | { kind: "member"; slide: number; cell: number };
 
 /** Time mode's ruler scale: one second of film is this many pixels. */
 const PX_PER_SEC = 24;
@@ -85,16 +87,6 @@ function drawWaveform(
 }
 
 type DropZone = { kind: "bind"; index: number } | { kind: "insert"; index: number };
-
-function zoneForCard(e: React.DragEvent, index: number, el: HTMLElement, vertical: boolean): DropZone {
-  const r = el.getBoundingClientRect();
-  const frac = vertical
-    ? (e.clientY - r.top) / Math.max(r.height, 1)
-    : (e.clientX - r.left) / Math.max(r.width, 1);
-  if (frac < 0.25) return { kind: "insert", index };
-  if (frac > 0.75) return { kind: "insert", index: index + 1 };
-  return { kind: "bind", index };
-}
 
 /** Thumbnail lookup for cells and shelf items. */
 function useThumbs(): Map<string, MediaItem> {
@@ -180,7 +172,18 @@ function SlideThumb({
   );
 }
 
-export default function Timeline({ onImport }: { onImport: () => void }) {
+/**
+ * `face` pins the panel to one mode (split layout renders two instances:
+ * Arrange on the left, Time at the bottom). Without it the panel carries the
+ * mode toggle and follows the store's mode.
+ */
+export default function Timeline({
+  onImport,
+  face,
+}: {
+  onImport: () => void;
+  face?: "arrange" | "time";
+}) {
   const project = useEditor((s) => s.project);
   const selected = useEditor((s) => s.selectedSlide);
   const selectSlide = useEditor((s) => s.selectSlide);
@@ -188,8 +191,9 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
   const mutate = useEditor((s) => s.mutate);
   const media = useEditor((s) => s.media);
   const removeMedia = useEditor((s) => s.removeMedia);
-  const mode = useEditor((s) => s.mode);
+  const storeMode = useEditor((s) => s.mode);
   const setMode = useEditor((s) => s.setMode);
+  const mode = face ?? storeMode;
   const timing = useEditor((s) => s.timing);
   const time = useEditor((s) => s.time);
   const setTime = useEditor((s) => s.setTime);
@@ -199,8 +203,9 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
   const dock = useEditor((s) => s.ui.dock);
   const setUi = useEditor((s) => s.setUi);
   const thumbs = useThumbs();
-  /** Side-docked Time mode runs the clock top-to-bottom. */
-  const vertical = mode === "time" && dock !== "bottom";
+  /** Side-docked Time mode runs the clock top-to-bottom. A pinned Time face
+   * (split layout) always sits at the bottom, so it stays horizontal. */
+  const vertical = mode === "time" && dock !== "bottom" && !face;
 
   const slides = project.slides;
   const aspect = project.settings.width / Math.max(project.settings.height, 1);
@@ -477,52 +482,120 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
     m.status === "ready" && (m.info.is_image || m.info.has_video) ? slideForMedia(m) : null;
 
   // ---- drag handling ----
-  const handleCardDragOver = (e: React.DragEvent, i: number) => {
-    const types = e.dataTransfer.types;
-    if (!types.includes(SLIDE_MIME) && !types.includes(MEDIA_MIME)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const zone = zoneForCard(e, i, e.currentTarget as HTMLElement, vertical);
-    // A bind that would overfill the group falls back to inserting beside.
-    if (zone.kind === "bind") {
-      const room = slides[i].cells.length < GROUP_MAX && dragging !== i;
-      if (!room) {
-        setDrop({ kind: "insert", index: i + 1 });
-        return;
-      }
-    }
-    setDrop(zone);
+  // Pointer-event dragging, not HTML5 drag-and-drop: Tauri's window-level
+  // drag handler (needed for OS file drops) swallows the webview's native
+  // DnD events on macOS, so draggable/ondragover never fire for real mice.
+  const dragStart = useRef<{ payload: DragPayload; x: number; y: number } | null>(null);
+  const dropRef = useRef<DropZone | null>(null);
+  const overRef = useRef<{ grid: boolean; shelf: boolean }>({ grid: false, shelf: false });
+  const [ghost, setGhost] = useState<{ x: number; y: number; label: string } | null>(null);
+  const [shelfHot, setShelfHot] = useState(false);
+
+  const setDropBoth = (z: DropZone | null) => {
+    dropRef.current = z;
+    setDrop(z);
   };
 
-  const handleGridDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const zone = drop;
-    setDrop(null);
+  const dragLabel = (p: DragPayload): string => {
+    if (p.kind === "slide") {
+      const s = slides[p.index];
+      return s && s.cells.length > 1 ? `Group of ${s.cells.length}` : `Slide ${p.index + 1}`;
+    }
+    if (p.kind === "media") return p.path.replace(/^.*[/\\]/, "");
+    return "Photo";
+  };
+
+  const updateDragTarget = (x: number, y: number, payload: DragPayload) => {
+    const els = document.elementsFromPoint(x, y);
+    const overShelf = els.some((el) => el.classList.contains("shelf"));
+    const overGrid = els.some((el) => el === gridRef.current);
+    overRef.current = { grid: overGrid, shelf: overShelf };
+    setShelfHot(overShelf && payload.kind === "slide");
+
+    if (payload.kind === "member") {
+      // A member drop splits after its group wherever it lands; no target.
+      setDropBoth(null);
+      return;
+    }
+    const cardEl = els.find(
+      (el): el is HTMLElement => el instanceof HTMLElement && el.classList.contains("slide-card"),
+    );
+    if (!cardEl) {
+      setDropBoth(null);
+      return;
+    }
+    const i = Number(cardEl.dataset.index);
+    if (Number.isNaN(i)) {
+      setDropBoth(null);
+      return;
+    }
+    const r = cardEl.getBoundingClientRect();
+    const frac = vertical
+      ? (y - r.top) / Math.max(r.height, 1)
+      : (x - r.left) / Math.max(r.width, 1);
+    let zone: DropZone =
+      frac < 0.25
+        ? { kind: "insert", index: i }
+        : frac > 0.75
+          ? { kind: "insert", index: i + 1 }
+          : { kind: "bind", index: i };
+    if (zone.kind === "bind") {
+      const sourceCells = payload.kind === "slide" ? slides[payload.index]?.cells.length ?? 1 : 1;
+      const overfull = slides[i].cells.length + sourceCells > GROUP_MAX;
+      const self = payload.kind === "slide" && payload.index === i;
+      // A bind that would overfill (or target itself) falls back to inserting.
+      if (overfull || self) zone = { kind: "insert", index: i + 1 };
+    }
+    setDropBoth(zone);
+  };
+
+  const beginDrag = (e: React.PointerEvent, payload: DragPayload) => {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest("button, input")) return;
+    dragStart.current = { payload, x: e.clientX, y: e.clientY };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const moveDrag = (e: React.PointerEvent) => {
+    const st = dragStart.current;
+    if (!st) return;
+    if (!ghost && Math.hypot(e.clientX - st.x, e.clientY - st.y) < 5) return;
+    if (st.payload.kind === "slide") setDragging(st.payload.index);
+    setGhost({ x: e.clientX, y: e.clientY, label: dragLabel(st.payload) });
+    updateDragTarget(e.clientX, e.clientY, st.payload);
+  };
+
+  const endDrag = () => {
+    const st = dragStart.current;
+    const wasDragging = ghost !== null;
+    const zone = dropRef.current;
+    const over = overRef.current;
+    dragStart.current = null;
+    setGhost(null);
     setDragging(null);
-    const slideIdx = e.dataTransfer.getData(SLIDE_MIME);
-    const mediaPath = e.dataTransfer.getData(MEDIA_MIME);
-    const member = e.dataTransfer.getData(MEMBER_MIME);
-    if (member) {
-      const parsed: unknown = JSON.parse(member);
-      if (parsed && typeof parsed === "object" && "slide" in parsed && "cell" in parsed) {
-        const at = parsed as { slide: number; cell: number };
-        splitMember(at.slide, at.cell);
-      }
+    setDropBoth(null);
+    setShelfHot(false);
+    if (!st || !wasDragging) return; // a plain click — handled by onClick
+
+    const p = st.payload;
+    if (p.kind === "member") {
+      splitMember(p.slide, p.cell);
       return;
     }
-    if (slideIdx !== "") {
-      const from = parseInt(slideIdx, 10);
-      if (zone?.kind === "bind") bind(zone.index, from);
-      else if (zone?.kind === "insert") reorder(from, zone.index);
-      else reorder(from, slides.length);
+    if (p.kind === "slide") {
+      if (over.shelf) removeSlide(p.index);
+      else if (zone?.kind === "bind") bind(zone.index, p.index);
+      else if (zone?.kind === "insert") reorder(p.index, zone.index);
+      else if (over.grid) reorder(p.index, slides.length);
       return;
     }
-    if (mediaPath) {
-      if (zone?.kind === "bind") {
-        bindMedia(zone.index, mediaPath);
-        return;
-      }
-      const m = thumbs.get(mediaPath);
+    // media from the shelf
+    if (zone?.kind === "bind") {
+      bindMedia(zone.index, p.path);
+      return;
+    }
+    if (zone?.kind === "insert" || over.grid) {
+      const m = thumbs.get(p.path);
       const fresh = m ? slideForShelfItem(m) : null;
       if (fresh) insertSlides(zone?.kind === "insert" ? zone.index : slides.length, [fresh]);
     }
@@ -622,11 +695,9 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
             <div
               key={j}
               className={`band-member ${j === memberFocus ? "focused" : ""}`}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData(MEMBER_MIME, JSON.stringify({ slide: openIdx, cell: j }));
-                e.dataTransfer.effectAllowed = "move";
-              }}
+              onPointerDown={(e) => beginDrag(e, { kind: "member", slide: openIdx, cell: j })}
+              onPointerMove={moveDrag}
+              onPointerUp={endDrag}
               onClick={() => setMemberFocus(j)}
             >
               {thumb ? <img src={thumb} alt="" draggable={false} /> : <span className="thumb-empty" />}
@@ -684,18 +755,10 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
         role="option"
         aria-selected={i === selected}
         aria-label={`Slide ${i + 1} of ${slides.length}${s.cells.length > 1 ? `, group of ${s.cells.length}` : ""}${proportional ? `, ${s.duration.toFixed(1)} seconds` : ""}`}
-        draggable
-        onDragStart={(e) => {
-          e.dataTransfer.setData(SLIDE_MIME, String(i));
-          e.dataTransfer.effectAllowed = "move";
-          setDragging(i);
-        }}
-        onDragEnd={() => {
-          setDragging(null);
-          setDrop(null);
-        }}
-        onDragOver={(e) => handleCardDragOver(e, i)}
-        onDragLeave={() => setDrop((d) => (d?.kind === "bind" && d.index === i ? null : d))}
+        data-index={i}
+        onPointerDown={(e) => beginDrag(e, { kind: "slide", index: i })}
+        onPointerMove={moveDrag}
+        onPointerUp={endDrag}
         onClick={() => selectSlide(i)}
         onDoubleClick={() => {
           if (mode === "arrange" && s.cells.length > 1) {
@@ -734,56 +797,93 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
   const children: React.ReactNode[] = [...cards];
   if (band && bandAt >= 0) children.splice(bandAt, 0, band);
 
+  const dockToggle = (
+    <div className="dock-toggle" role="group" aria-label="Timeline position">
+      {(["left", "bottom", "right", "split"] as const).map((d) => (
+        <button
+          key={d}
+          className={dock === d ? "on" : ""}
+          aria-pressed={dock === d}
+          title={
+            d === "split"
+              ? "Split view: Arrange left, Time at the bottom"
+              : `Dock timeline ${d === "bottom" ? "at the bottom" : `on the ${d}`}`
+          }
+          onClick={() => setUi({ dock: d })}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" />
+            {d === "left" && <rect x="1.5" y="1.5" width="3.5" height="9" fill="currentColor" />}
+            {d === "bottom" && <rect x="1.5" y="7" width="9" height="3.5" fill="currentColor" />}
+            {d === "right" && <rect x="7" y="1.5" width="3.5" height="9" fill="currentColor" />}
+            {d === "split" && (
+              <>
+                <rect x="1.5" y="1.5" width="3.5" height="5" fill="currentColor" />
+                <rect x="1.5" y="7.5" width="9" height="3" fill="currentColor" />
+              </>
+            )}
+          </svg>
+        </button>
+      ))}
+    </div>
+  );
+
+  const collapseButton = face && (
+    <button
+      className="ghost"
+      title={`Hide the ${face === "arrange" ? "Arrange" : "Time"} panel`}
+      onClick={() =>
+        setUi(face === "arrange" ? { arrangeCollapsed: true } : { timeCollapsed: true })
+      }
+    >
+      —
+    </button>
+  );
+
   return (
-    <footer className={`timeline ${mode}`}>
+    <footer className={`timeline ${mode} ${face ? `face-${face}` : ""}`}>
       <div className="timeline-bar">
-        <div className="mode-toggle" role="tablist" aria-label="Timeline mode">
-          <button role="tab" aria-selected={mode === "arrange"} className={mode === "arrange" ? "on" : ""} onClick={() => switchMode("arrange")}>
-            Arrange
-          </button>
-          <button role="tab" aria-selected={mode === "time"} className={mode === "time" ? "on" : ""} onClick={() => switchMode("time")}>
-            Time
-          </button>
-        </div>
-        <span className="hint">
-          {slides.length} slide{slides.length === 1 ? "" : "s"}
-        </span>
-        <div className="timeline-actions">
-          <button onClick={onImport}>+ Import</button>
-          <button onClick={addEmpty}>+ Blank slide</button>
-          <button
-            onClick={() => duplicate(selected)}
-            disabled={!slides[selected]}
-            title="Duplicate the selected slide (⌘D)"
-          >
-            ⧉ Duplicate
-          </button>
-          <button
-            className={`ghost ${shelfOpen ? "on" : ""}`}
-            aria-expanded={shelfOpen}
-            onClick={() => setShelfOpen(!shelfOpen)}
-          >
-            Not used ({unused.length})
-          </button>
-          <div className="dock-toggle" role="group" aria-label="Timeline position">
-            {(["left", "bottom", "right"] as const).map((d) => (
-              <button
-                key={d}
-                className={dock === d ? "on" : ""}
-                aria-pressed={dock === d}
-                title={`Dock timeline ${d === "bottom" ? "at the bottom" : `on the ${d}`}`}
-                onClick={() => setUi({ dock: d })}
-              >
-                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                  <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" />
-                  {d === "left" && <rect x="1.5" y="1.5" width="3.5" height="9" fill="currentColor" />}
-                  {d === "bottom" && <rect x="1.5" y="7" width="9" height="3.5" fill="currentColor" />}
-                  {d === "right" && <rect x="7" y="1.5" width="3.5" height="9" fill="currentColor" />}
-                </svg>
-              </button>
-            ))}
+        {face ? (
+          <span className="panel-label">{face === "arrange" ? "Arrange" : "Time"}</span>
+        ) : (
+          <div className="mode-toggle" role="tablist" aria-label="Timeline mode">
+            <button role="tab" aria-selected={mode === "arrange"} className={mode === "arrange" ? "on" : ""} onClick={() => switchMode("arrange")}>
+              Arrange
+            </button>
+            <button role="tab" aria-selected={mode === "time"} className={mode === "time" ? "on" : ""} onClick={() => switchMode("time")}>
+              Time
+            </button>
           </div>
-        </div>
+        )}
+        {face !== "time" && (
+          <span className="hint">
+            {slides.length} slide{slides.length === 1 ? "" : "s"}
+          </span>
+        )}
+        {face === "time" ? (
+          <div className="timeline-actions">{collapseButton}</div>
+        ) : (
+          <div className="timeline-actions">
+            <button onClick={onImport}>+ Import</button>
+            <button onClick={addEmpty}>+ Blank slide</button>
+            <button
+              onClick={() => duplicate(selected)}
+              disabled={!slides[selected]}
+              title="Duplicate the selected slide (⌘D)"
+            >
+              ⧉ Duplicate
+            </button>
+            <button
+              className={`ghost ${shelfOpen ? "on" : ""}`}
+              aria-expanded={shelfOpen}
+              onClick={() => setShelfOpen(!shelfOpen)}
+            >
+              Not used ({unused.length})
+            </button>
+            {dockToggle}
+            {collapseButton}
+          </div>
+        )}
       </div>
 
       {mode === "arrange" ? (
@@ -793,11 +893,6 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
           role="listbox"
           aria-label="Slides in playback order"
           onKeyDown={gridKeys}
-          onDragOver={(e) => {
-            if (e.dataTransfer.types.includes(SLIDE_MIME) || e.dataTransfer.types.includes(MEDIA_MIME) || e.dataTransfer.types.includes(MEMBER_MIME))
-              e.preventDefault();
-          }}
-          onDrop={handleGridDrop}
         >
           {slides.length === 0 && (
             <p className="hint center empty-grid">
@@ -816,11 +911,6 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
           role="listbox"
           aria-label={`Slides on the clock — card ${vertical ? "height" : "width"} is duration`}
           onKeyDown={gridKeys}
-          onDragOver={(e) => {
-            if (e.dataTransfer.types.includes(SLIDE_MIME) || e.dataTransfer.types.includes(MEDIA_MIME))
-              e.preventDefault();
-          }}
-          onDrop={handleGridDrop}
         >
           <div
             className="time-content"
@@ -884,29 +974,18 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
         </div>
       )}
 
-      {shelfOpen && unused.length > 0 && (
-        <div
-          className="shelf"
-          aria-label="Not used"
-          onDragOver={(e) => {
-            if (e.dataTransfer.types.includes(SLIDE_MIME)) e.preventDefault();
-          }}
-          onDrop={(e) => {
-            const idx = e.dataTransfer.getData(SLIDE_MIME);
-            if (idx !== "") {
-              e.preventDefault();
-              e.stopPropagation();
-              removeSlide(parseInt(idx, 10));
-            }
-          }}
-        >
+      {face !== "time" && shelfOpen && unused.length > 0 && (
+        <div className={`shelf ${shelfHot ? "drop-hot" : ""}`} aria-label="Not used">
           {unused.map((m) => (
             <div
               key={m.path}
               className="shelf-item"
               title={m.path}
-              draggable={m.status === "ready"}
-              onDragStart={(e) => e.dataTransfer.setData(MEDIA_MIME, m.path)}
+              onPointerDown={(e) => {
+                if (m.status === "ready") beginDrag(e, { kind: "media", path: m.path });
+              }}
+              onPointerMove={moveDrag}
+              onPointerUp={endDrag}
             >
               {m.status === "ready" && m.thumb ? (
                 <img src={m.thumb} alt="" draggable={false} />
@@ -937,6 +1016,12 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {ghost && (
+        <div className="drag-ghost" style={{ left: ghost.x + 14, top: ghost.y + 12 }} aria-hidden="true">
+          {ghost.label}
         </div>
       )}
     </footer>
