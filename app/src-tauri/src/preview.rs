@@ -128,7 +128,7 @@ pub fn spawn_render_thread(
     ffmpeg: Option<Ffmpeg>,
 ) {
     std::thread::spawn(move || {
-        let mut renderer = Renderer::new(ffmpeg);
+        let mut renderer = Renderer::new(ffmpeg.clone());
         let mut cache = FrameCache::new();
         while let Ok(first) = rx.recv() {
             // Coalesce: drain everything queued, keep only the newest job to
@@ -164,14 +164,25 @@ pub fn spawn_render_thread(
             let key = Key::new(rev, &newest);
             let result = match cache.get(&key) {
                 Some(bytes) => Ok(bytes),
-                None => renderer
-                    .render_frame(&project, &timeline, key.render_time(), newest.scale)
-                    .map_err(|e| format!("render: {e:#}"))
-                    .map(|frame| {
-                        let bytes = Arc::new(frame_to_bytes(&frame));
-                        cache.put(key, bytes.clone());
-                        bytes
-                    }),
+                None => {
+                    // A panic must cost this frame, not the preview for the
+                    // rest of the session: catch it, rebuild the renderer
+                    // (its caches may be mid-mutation), and keep serving.
+                    let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        renderer.render_frame(&project, &timeline, key.render_time(), newest.scale)
+                    }));
+                    match rendered {
+                        Err(_) => {
+                            renderer = Renderer::new(ffmpeg.clone());
+                            Err("render panicked; renderer restarted".to_string())
+                        }
+                        Ok(r) => r.map_err(|e| format!("render: {e:#}")).map(|frame| {
+                            let bytes = Arc::new(frame_to_bytes(&frame));
+                            cache.put(key, bytes.clone());
+                            bytes
+                        }),
+                    }
+                }
             };
             if let Err(e) = &result {
                 log::warn!("preview render failed: {e}");
