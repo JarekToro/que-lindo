@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { layoutRects } from "../layout";
+import { ensureAudioCtx, mixForRev } from "../mixcache";
 import {
   audioTrackFor,
   autoLayout,
@@ -25,6 +26,56 @@ import type { Cell, MediaInfo, MediaItem, Slide } from "../types";
 const SLIDE_MIME = "application/x-slide-index";
 const MEDIA_MIME = "application/x-media-path";
 const MEMBER_MIME = "application/x-group-member";
+
+/** Time mode's ruler scale: one second of film is this many pixels. */
+const PX_PER_SEC = 24;
+/** Height of a card's picture area in the proportional strip. */
+const TIME_THUMB_H = 76;
+
+const TRANSITION_NAMES: Record<string, string> = {
+  cut: "Cut",
+  cross_fade: "Crossfade",
+  fade_black: "Fade through black",
+  fade_white: "Fade through white",
+  slide: "Slide",
+  wipe: "Wipe",
+};
+
+function fmtClock(t: number): string {
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** Min/max peaks of the mix drawn into the lane canvas. */
+function drawWaveform(canvas: HTMLCanvasElement, buffer: AudioBuffer | null, cssWidth: number) {
+  const w = Math.max(1, Math.min(Math.round(cssWidth), 8192));
+  const h = 56;
+  canvas.width = w;
+  canvas.height = h;
+  const g = canvas.getContext("2d");
+  if (!g) return;
+  g.clearRect(0, 0, w, h);
+  if (!buffer) return;
+  const data = buffer.getChannelData(0);
+  const step = data.length / w;
+  g.fillStyle = "rgba(212, 175, 110, 0.55)";
+  const mid = h / 2;
+  for (let x = 0; x < w; x++) {
+    let min = 0;
+    let max = 0;
+    const from = Math.floor(x * step);
+    const to = Math.min(Math.floor((x + 1) * step), data.length);
+    for (let i = from; i < to; i += 4) {
+      const v = data[i];
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    const top = mid + min * mid;
+    const bottom = mid + max * mid;
+    g.fillRect(x, top, 1, Math.max(bottom - top, 1));
+  }
+}
 
 type DropZone = { kind: "bind"; index: number } | { kind: "insert"; index: number };
 
@@ -117,11 +168,18 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
   const project = useEditor((s) => s.project);
   const selected = useEditor((s) => s.selectedSlide);
   const selectSlide = useEditor((s) => s.selectSlide);
+  const selectText = useEditor((s) => s.selectText);
   const mutate = useEditor((s) => s.mutate);
   const media = useEditor((s) => s.media);
   const removeMedia = useEditor((s) => s.removeMedia);
   const mode = useEditor((s) => s.mode);
   const setMode = useEditor((s) => s.setMode);
+  const timing = useEditor((s) => s.timing);
+  const time = useEditor((s) => s.time);
+  const setTime = useEditor((s) => s.setTime);
+  const playing = useEditor((s) => s.playing);
+  const setPlaying = useEditor((s) => s.setPlaying);
+  const rev = useEditor((s) => s.rev);
   const thumbs = useThumbs();
 
   const slides = project.slides;
@@ -166,6 +224,112 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [slides.length, mode]);
+
+  // ---- the mode switch: one animated reflow (FLIP over the same cards) ----
+  const flipRects = useRef<Map<string, DOMRect> | null>(null);
+  const switchMode = (m: "arrange" | "time") => {
+    if (m === mode) return;
+    const rects = new Map<string, DOMRect>();
+    for (const [i, el] of cardRefs.current) {
+      const id = slides[i]?.id;
+      if (id) rects.set(id, el.getBoundingClientRect());
+    }
+    flipRects.current = rects;
+    setOpenGroupId(null);
+    setMode(m);
+    // The signature moment: cards stretch to their true lengths, the audio
+    // lane rises, and the music starts. Leaving Time pauses it again.
+    setPlaying(m === "time" && slides.length > 0);
+  };
+
+  useLayoutEffect(() => {
+    const prev = flipRects.current;
+    if (!prev) return;
+    flipRects.current = null;
+    for (const [i, el] of cardRefs.current) {
+      const id = slides[i]?.id;
+      const from = id ? prev.get(id) : undefined;
+      if (!from) continue;
+      const to = el.getBoundingClientRect();
+      const dx = from.left - to.left;
+      const dy = from.top - to.top;
+      const sx = from.width / Math.max(to.width, 1);
+      const sy = from.height / Math.max(to.height, 1);
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(sx - 1) < 0.02 && Math.abs(sy - 1) < 0.02)
+        continue;
+      // Off-screen on both ends (a 300-card grid): nothing to show, skip.
+      const off = (r: DOMRect) =>
+        r.bottom < 0 || r.top > window.innerHeight || r.right < 0 || r.left > window.innerWidth;
+      if (off(from) && off(to)) continue;
+      el.animate(
+        [
+          { transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`, transformOrigin: "top left" },
+          { transform: "none", transformOrigin: "top left" },
+        ],
+        { duration: 320, easing: "cubic-bezier(0.2, 0, 0, 1)" },
+      );
+    }
+  }, [mode]);
+
+  // ---- time mode: proportional geometry from the backend's timing ----
+  const total = timing?.total ?? slides.reduce((a, s) => a + s.duration, 0);
+  const { widths, lefts } = useMemo(() => {
+    const spans = timing?.spans;
+    const ws = slides.map((s, i) => {
+      if (spans && spans.length === slides.length) {
+        const next = i + 1 < spans.length ? spans[i + 1].start : total;
+        return Math.max((next - spans[i].start) * PX_PER_SEC, 24);
+      }
+      return Math.max(s.duration * PX_PER_SEC, 24);
+    });
+    const ls: number[] = [];
+    let x = 0;
+    for (const w of ws) {
+      ls.push(x);
+      x += w;
+    }
+    return { widths: ws, lefts: ls };
+  }, [slides, timing, total]);
+  const contentW = Math.max(total * PX_PER_SEC, 1);
+
+  // The audio lane draws the real mix — the same PCM the preview plays.
+  const laneRef = useRef<HTMLCanvasElement | null>(null);
+  const [hasMix, setHasMix] = useState(false);
+  useEffect(() => {
+    if (mode !== "time") return;
+    let dead = false;
+    void mixForRev(ensureAudioCtx(), rev)
+      .then((buffer) => {
+        if (dead) return;
+        setHasMix(!!buffer);
+        if (laneRef.current) drawWaveform(laneRef.current, buffer, contentW);
+      })
+      .catch(() => setHasMix(false));
+    return () => {
+      dead = true;
+    };
+  }, [mode, rev, contentW]);
+
+  // Scrubbing on the ruler: proportional position is the playhead.
+  const stripRef = useRef<HTMLDivElement | null>(null);
+  const seekAt = useCallback(
+    (e: React.PointerEvent) => {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      setTime(Math.max(0, (e.clientX - rect.left) / PX_PER_SEC));
+    },
+    [setTime],
+  );
+
+  // Playback keeps the playhead in view.
+  useEffect(() => {
+    if (mode !== "time" || !playing) return;
+    const strip = stripRef.current;
+    if (!strip) return;
+    const x = time * PX_PER_SEC;
+    if (x < strip.scrollLeft + 40 || x > strip.scrollLeft + strip.clientWidth - 80) {
+      strip.scrollLeft = Math.max(0, x - strip.clientWidth * 0.3);
+    }
+  }, [time, playing, mode]);
 
   // ---- the "Not used" shelf: imported media the film doesn't reference ----
   const usedPaths = useMemo(() => {
@@ -463,6 +627,9 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
     const isReceiving = drop?.kind === "bind" && drop.index === i;
     const insertBefore = drop?.kind === "insert" && drop.index === i;
     const insertAfter = drop?.kind === "insert" && drop.index === i + 1;
+    const proportional = mode === "time";
+    const cardAspect = proportional ? Math.max(widths[i] - 8, 24) / TIME_THUMB_H : aspect;
+    const firstText = s.texts.find((t) => t.text.trim());
     return (
       <div
         key={s.id}
@@ -477,13 +644,13 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
           insertBefore ? "insert-before" : "",
           insertAfter ? "insert-after" : "",
           dragging === i ? "dragging" : "",
-          mode === "time" ? "proportional" : "",
+          proportional ? "proportional" : "",
         ].join(" ")}
-        style={mode === "time" ? { width: Math.max(60, Math.min(s.duration * 24, 420)) } : undefined}
+        style={proportional ? { width: widths[i] } : undefined}
         tabIndex={i === selected ? 0 : -1}
         role="option"
         aria-selected={i === selected}
-        aria-label={`Slide ${i + 1} of ${slides.length}${s.cells.length > 1 ? `, group of ${s.cells.length}` : ""}`}
+        aria-label={`Slide ${i + 1} of ${slides.length}${s.cells.length > 1 ? `, group of ${s.cells.length}` : ""}${proportional ? `, ${s.duration.toFixed(1)} seconds` : ""}`}
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData(SLIDE_MIME, String(i));
@@ -498,15 +665,29 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
         onDragLeave={() => setDrop((d) => (d?.kind === "bind" && d.index === i ? null : d))}
         onClick={() => selectSlide(i)}
         onDoubleClick={() => {
-          if (s.cells.length > 1) {
+          if (mode === "arrange" && s.cells.length > 1) {
             setOpenGroupId(s.id);
             setMemberFocus(0);
           }
         }}
       >
-        <SlideThumb slide={s} thumbs={thumbs} aspect={aspect} receiving={isReceiving} />
+        <SlideThumb slide={s} thumbs={thumbs} aspect={cardAspect} receiving={isReceiving} />
         {s.cells.length > 1 && <span className="card-count">{s.cells.length}</span>}
         <span className="card-index">{i + 1}</span>
+        {proportional && <span className="card-duration">{s.duration.toFixed(1)}s</span>}
+        {proportional && firstText && (
+          <button
+            className="card-text-chip"
+            title="Edit this text (opens it in the panel)"
+            onClick={(e) => {
+              e.stopPropagation();
+              selectSlide(i, false);
+              selectText(s.texts.indexOf(firstText));
+            }}
+          >
+            T {firstText.text}
+          </button>
+        )}
       </div>
     );
   });
@@ -518,10 +699,10 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
     <footer className={`timeline ${mode}`}>
       <div className="timeline-bar">
         <div className="mode-toggle" role="tablist" aria-label="Timeline mode">
-          <button role="tab" aria-selected={mode === "arrange"} className={mode === "arrange" ? "on" : ""} onClick={() => setMode("arrange")}>
+          <button role="tab" aria-selected={mode === "arrange"} className={mode === "arrange" ? "on" : ""} onClick={() => switchMode("arrange")}>
             Arrange
           </button>
-          <button role="tab" aria-selected={mode === "time"} className={mode === "time" ? "on" : ""} onClick={() => setMode("time")}>
+          <button role="tab" aria-selected={mode === "time"} className={mode === "time" ? "on" : ""} onClick={() => switchMode("time")}>
             Time
           </button>
         </div>
@@ -548,25 +729,88 @@ export default function Timeline({ onImport }: { onImport: () => void }) {
         </div>
       </div>
 
-      <div
-        ref={gridRef}
-        className={mode === "arrange" ? "arrange-grid" : "time-strip"}
-        role="listbox"
-        aria-label="Slides in playback order"
-        onKeyDown={gridKeys}
-        onDragOver={(e) => {
-          if (e.dataTransfer.types.includes(SLIDE_MIME) || e.dataTransfer.types.includes(MEDIA_MIME) || e.dataTransfer.types.includes(MEMBER_MIME))
-            e.preventDefault();
-        }}
-        onDrop={handleGridDrop}
-      >
-        {slides.length === 0 && (
-          <p className="hint center empty-grid">
-            Drop photos, clips and music anywhere — every photo becomes a slide.
-          </p>
-        )}
-        {children}
-      </div>
+      {mode === "arrange" ? (
+        <div
+          ref={gridRef}
+          className="arrange-grid"
+          role="listbox"
+          aria-label="Slides in playback order"
+          onKeyDown={gridKeys}
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes(SLIDE_MIME) || e.dataTransfer.types.includes(MEDIA_MIME) || e.dataTransfer.types.includes(MEMBER_MIME))
+              e.preventDefault();
+          }}
+          onDrop={handleGridDrop}
+        >
+          {slides.length === 0 && (
+            <p className="hint center empty-grid">
+              Drop photos, clips and music anywhere — every photo becomes a slide.
+            </p>
+          )}
+          {children}
+        </div>
+      ) : (
+        <div
+          ref={(el) => {
+            gridRef.current = el;
+            stripRef.current = el;
+          }}
+          className="time-strip"
+          role="listbox"
+          aria-label="Slides on the clock — card width is duration"
+          onKeyDown={gridKeys}
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes(SLIDE_MIME) || e.dataTransfer.types.includes(MEDIA_MIME))
+              e.preventDefault();
+          }}
+          onDrop={handleGridDrop}
+        >
+          <div className="time-content" style={{ width: contentW }}>
+            <div
+              className="time-ruler"
+              onPointerDown={(e) => {
+                e.currentTarget.setPointerCapture(e.pointerId);
+                setPlaying(false);
+                seekAt(e);
+              }}
+              onPointerMove={(e) => {
+                if (e.buttons & 1) seekAt(e);
+              }}
+            >
+              {Array.from({ length: Math.floor(total / 10) + 1 }, (_, k) => (
+                <span key={k} className="ruler-tick" style={{ left: k * 10 * PX_PER_SEC }}>
+                  {fmtClock(k * 10)}
+                </span>
+              ))}
+            </div>
+            <div className="time-row">{cards}</div>
+            <div className="audio-lane">
+              <canvas ref={laneRef} aria-label="Music waveform" style={{ width: contentW }} />
+              {!hasMix && (
+                <span className="hint lane-hint">No music yet — add a track from “Not used”.</span>
+              )}
+            </div>
+            {slides.map(
+              (s, i) =>
+                i > 0 &&
+                s.transition.kind.type !== "cut" && (
+                  <button
+                    key={`seam-${s.id}`}
+                    className="seam-marker"
+                    style={{ left: lefts[i] }}
+                    title={`${TRANSITION_NAMES[s.transition.kind.type] ?? "Transition"} · ${s.transition.duration.toFixed(1)}s`}
+                    onClick={() => selectSlide(i)}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                      <path d="M5 0 L10 5 L5 10 L0 5 Z" fill="currentColor" />
+                    </svg>
+                  </button>
+                ),
+            )}
+            <div className="playhead" style={{ left: time * PX_PER_SEC }} aria-hidden="true" />
+          </div>
+        </div>
+      )}
 
       {shelfOpen && unused.length > 0 && (
         <div

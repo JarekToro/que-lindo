@@ -1,26 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { isSuperseded, renderAudioMix, renderPreview } from "../api";
+import { isSuperseded, renderPreview } from "../api";
+import { ensureAudioCtx, mixForRev } from "../mixcache";
 import { slideAt, useEditor } from "../store";
 
 const PLAYBACK_FPS = 12;
-
-// One AudioContext for the app's lifetime, created on the first play (a user
-// gesture, so autoplay policy is satisfied). The mix decodes once per project
-// revision and is cached until the project changes.
-let audioCtx: AudioContext | null = null;
-let mixCache: { rev: number; buffer: AudioBuffer | null } | null = null;
-
-function ensureAudioCtx(): AudioContext {
-  if (!audioCtx) audioCtx = new AudioContext();
-  return audioCtx;
-}
-
-async function mixForRev(ctx: AudioContext, rev: number): Promise<AudioBuffer | null> {
-  if (mixCache?.rev === rev) return mixCache.buffer;
-  const buffer = await renderAudioMix(ctx);
-  mixCache = { rev, buffer };
-  return buffer;
-}
 
 /** Scrubbable preview rendered by the real compositor (raw frames over binary IPC). */
 export default function Preview() {

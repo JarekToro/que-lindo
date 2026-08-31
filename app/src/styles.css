@@ -113,10 +113,56 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   scrollbar-color: var(--line) transparent;
 }
 .time-strip {
-  display: flex; gap: 6px; padding: 10px; overflow-x: auto; align-items: flex-start; flex: 1;
+  position: relative; overflow-x: auto; overflow-y: hidden; flex: 1; padding: 0 10px 6px;
   scrollbar-color: var(--line) transparent;
 }
-.time-strip .slide-card { flex-shrink: 0; }
+.time-content { position: relative; min-width: 100%; min-height: 100%; }
+.time-row { display: flex; gap: 0; align-items: stretch; }
+.time-row .slide-card { flex-shrink: 0; border-radius: 0; border-right-width: 0; }
+.time-row .slide-card:first-child { border-radius: 8px 0 0 8px; }
+.time-row .slide-card:last-child { border-radius: 0 8px 8px 0; border-right-width: 1px; }
+.time-row .slide-thumb { height: 76px; }
+.card-duration {
+  position: absolute; bottom: 5px; right: 7px; font-size: 10px; color: var(--muted);
+  font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px #000;
+}
+.card-text-chip {
+  position: absolute; top: 6px; left: 6px; max-width: calc(100% - 34px);
+  padding: 1px 6px; font-size: 10px; border-radius: 4px;
+  background: rgba(0, 0, 0, 0.6); border-color: transparent; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.time-ruler {
+  position: relative; height: 20px; cursor: ew-resize; user-select: none;
+  border-bottom: 1px solid var(--line); margin-bottom: 6px; touch-action: none;
+}
+.ruler-tick {
+  position: absolute; top: 3px; font-size: 10px; color: var(--muted);
+  font-variant-numeric: tabular-nums; padding-left: 4px; border-left: 1px solid var(--line);
+  pointer-events: none; height: 14px;
+}
+.audio-lane {
+  position: relative; height: 34px; margin-top: 6px; border-radius: 6px;
+  background: var(--panel-2); border: 1px solid var(--line); overflow: hidden;
+  animation: lane-rise 320ms cubic-bezier(0.2, 0, 0, 1);
+}
+@keyframes lane-rise {
+  from { transform: translateY(14px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.audio-lane canvas { height: 100%; display: block; }
+.lane-hint { position: absolute; inset: 0; display: flex; align-items: center; padding-left: 10px; }
+.seam-marker {
+  position: absolute; top: 20px; transform: translateX(-50%); z-index: 3;
+  width: 18px; height: 18px; padding: 0; border-radius: 50%; margin-top: 6px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--panel); border: 1px solid var(--accent); color: var(--accent);
+}
+.playhead {
+  position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; z-index: 4;
+  background: var(--accent); pointer-events: none;
+  box-shadow: 0 0 6px rgba(212, 175, 110, 0.6);
+}
 .empty-grid { grid-column: 1 / -1; padding: 24px 0; }
 
 .slide-card {
