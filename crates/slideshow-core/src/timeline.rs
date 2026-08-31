@@ -29,9 +29,10 @@ pub struct FrameSpec {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TransitionSpec {
-    /// Slide being left (== spec.slide - 1).
-    pub from: usize,
-    /// Local time within the outgoing slide.
+    /// Slide being left (`None` for the film's intro: the first slide
+    /// arriving out of the project background).
+    pub from: Option<usize>,
+    /// Local time within the outgoing slide (0 for the intro).
     pub from_local_t: f64,
     /// 0..1 progress through the transition.
     pub progress: f32,
@@ -49,17 +50,21 @@ impl Timeline {
 
         for (i, slide) in project.slides.iter().enumerate() {
             let dur = slide.duration.max(0.1);
-            let mut t_in = if i == 0 { 0.0 } else { slide.transition.effective_duration() };
+            let mut t_in = slide.transition.effective_duration();
             if i > 0 {
                 // A transition can't outlast either slide it joins.
                 let prev_dur = durations[i - 1];
                 t_in = t_in.min(prev_dur * 0.5).min(dur * 0.5);
                 cursor -= t_in;
+            } else {
+                // The first slide's transition is the film's intro: it plays
+                // inside the slide's own time, arriving from the background.
+                t_in = t_in.min(dur * 0.5);
             }
             starts.push(cursor);
             durations.push(dur);
             trans_in.push(t_in);
-            kinds.push(if i == 0 { TransitionKind::Cut } else { slide.transition.kind });
+            kinds.push(slide.transition.kind);
             cursor += dur;
         }
 
@@ -108,10 +113,10 @@ impl Timeline {
         let t = t.clamp(0.0, self.total);
         let local_t = t - self.starts[i];
         let mut transition = None;
-        if i > 0 && local_t < self.trans_in[i] && self.trans_in[i] > 0.0 {
+        if local_t < self.trans_in[i] && self.trans_in[i] > 0.0 {
             transition = Some(TransitionSpec {
-                from: i - 1,
-                from_local_t: t - self.starts[i - 1],
+                from: if i > 0 { Some(i - 1) } else { None },
+                from_local_t: if i > 0 { t - self.starts[i - 1] } else { 0.0 },
                 progress: (local_t / self.trans_in[i]) as f32,
                 kind: self.kinds[i],
             });
@@ -176,7 +181,7 @@ mod tests {
         assert_eq!(f.slide, 1);
         assert!((f.local_t - 0.5).abs() < 1e-9);
         let tr = f.transition.unwrap();
-        assert_eq!(tr.from, 0);
+        assert_eq!(tr.from, Some(0));
         assert!((tr.from_local_t - 3.5).abs() < 1e-9);
         assert!((tr.progress - 0.5).abs() < 1e-6);
 
@@ -184,6 +189,22 @@ mod tests {
         let f = tl.sample(4.5).unwrap();
         assert_eq!(f.slide, 1);
         assert!(f.transition.is_none());
+    }
+
+    #[test]
+    fn first_slide_intro_fades_from_nothing() {
+        let tl = Timeline::new(&proj(vec![(4.0, 1.0), (4.0, 1.0)]));
+        // The intro lives inside slide 0's time: no shift, same total.
+        assert_eq!(tl.slide_start(0), 0.0);
+        assert_eq!(tl.transition_in(0), 1.0);
+        assert_eq!(tl.total_duration(), 7.0);
+        let f = tl.sample(0.5).unwrap();
+        assert_eq!(f.slide, 0);
+        let tr = f.transition.unwrap();
+        assert_eq!(tr.from, None);
+        assert!((tr.progress - 0.5).abs() < 1e-6);
+        // Past the intro, plain slide 0.
+        assert!(tl.sample(1.5).unwrap().transition.is_none());
     }
 
     #[test]

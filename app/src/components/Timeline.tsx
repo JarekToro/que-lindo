@@ -1412,13 +1412,12 @@ export default function Timeline({
             </div>
             {slides.map(
               (s, i) =>
-                i > 0 &&
                 s.transition.kind.type !== "cut" && (
                   <button
                     key={`seam-${s.id}`}
                     className="seam-marker"
                     style={vertical ? { top: lefts[i] } : { left: lefts[i] }}
-                    title={`${TRANSITION_NAMES[s.transition.kind.type] ?? "Transition"} · ${s.transition.duration.toFixed(1)}s`}
+                    title={`${i === 0 ? "Opens with" : TRANSITION_NAMES[s.transition.kind.type] ?? "Transition"}${i === 0 ? ` (${TRANSITION_NAMES[s.transition.kind.type]?.toLowerCase() ?? "fade"})` : ""} · ${s.transition.duration.toFixed(1)}s`}
                     onClick={() => selectSlide(i)}
                   >
                     <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
