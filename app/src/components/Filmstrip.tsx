@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { importPaths } from "../App";
+import { importFiles } from "../App";
 import { cellFor, defaultSlide, slideForMedia } from "../presets";
 import { useEditor } from "../store";
-import type { Layout, Slide } from "../types";
+import type { ImportedMedia, Layout, Slide } from "../types";
 
 function layoutGlyph(layout: Layout): string {
   switch (layout.type) {
@@ -43,7 +43,6 @@ export default function Filmstrip() {
   const selectSlide = useEditor((s) => s.selectSlide);
   const mutate = useEditor((s) => s.mutate);
   const media = useEditor((s) => s.media);
-  const addMediaToBin = useEditor((s) => s.addMedia);
   const [dragOver, setDragOver] = useState<number | null>(null);
 
   const addEmpty = () =>
@@ -82,13 +81,16 @@ export default function Filmstrip() {
       return;
     }
     if (!path) return;
-    let item = media.find((m) => m.path === path);
-    if (!item) {
-      const items = await importPaths([path]);
-      if (!items.length) return;
-      addMediaToBin(items);
-      item = items[0];
+    const existing = media.find((m) => m.path === path);
+    let item: ImportedMedia | undefined;
+    if (existing) {
+      // Still importing or failed — nothing usable to drop yet.
+      if (existing.status !== "ready") return;
+      item = existing;
+    } else {
+      item = (await importFiles([path]))[0];
     }
+    if (!item) return;
     if (item.info.has_audio && !item.info.has_video && !item.info.is_image) return;
     if (slideIndex === null) {
       const slide = slideForMedia(item);
