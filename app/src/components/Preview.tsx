@@ -1,8 +1,26 @@
 import { useEffect, useRef, useState } from "react";
-import { isSuperseded, renderPreview } from "../api";
+import { isSuperseded, renderAudioMix, renderPreview } from "../api";
 import { slideAt, useEditor } from "../store";
 
 const PLAYBACK_FPS = 12;
+
+// One AudioContext for the app's lifetime, created on the first play (a user
+// gesture, so autoplay policy is satisfied). The mix decodes once per project
+// revision and is cached until the project changes.
+let audioCtx: AudioContext | null = null;
+let mixCache: { rev: number; buffer: AudioBuffer | null } | null = null;
+
+function ensureAudioCtx(): AudioContext {
+  if (!audioCtx) audioCtx = new AudioContext();
+  return audioCtx;
+}
+
+async function mixForRev(ctx: AudioContext, rev: number): Promise<AudioBuffer | null> {
+  if (mixCache?.rev === rev) return mixCache.buffer;
+  const buffer = await renderAudioMix(ctx);
+  mixCache = { rev, buffer };
+  return buffer;
+}
 
 /** Scrubbable preview rendered by the real compositor (raw frames over binary IPC). */
 export default function Preview() {
@@ -70,12 +88,43 @@ export default function Preview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [time, rev, scale]);
 
-  // Playback loop (video preview only — audio plays in the export).
+  // Playback: audio is the clock. The mix (same plan as export) plays through
+  // an AudioBufferSourceNode and `time` chases audioContext.currentTime, so
+  // frames follow the sound instead of a drifting setInterval. With no audio
+  // the same context clock drives time — wall-clock accurate either way.
+  const total = timing?.total ?? 0;
   useEffect(() => {
     if (!playing) return;
-    const total = timing?.total ?? 0;
+    const ctx = ensureAudioCtx();
+    let cancelled = false;
+    let started = false;
+    let source: AudioBufferSourceNode | null = null;
+    let anchorPos = 0;
+    let anchorCtxTime = 0;
+
+    const begin = async () => {
+      await ctx.resume();
+      let buffer: AudioBuffer | null = null;
+      try {
+        buffer = await mixForRev(ctx, rev);
+      } catch (e) {
+        console.warn("audio mix unavailable, playing silent", e);
+      }
+      if (cancelled) return;
+      anchorPos = useEditor.getState().time;
+      anchorCtxTime = ctx.currentTime;
+      if (buffer && anchorPos < buffer.duration) {
+        source = new AudioBufferSourceNode(ctx, { buffer });
+        source.connect(ctx.destination);
+        source.start(0, anchorPos);
+      }
+      started = true;
+    };
+    void begin();
+
     const id = setInterval(() => {
-      const t = useEditor.getState().time + 1 / PLAYBACK_FPS;
+      if (!started || cancelled) return;
+      const t = anchorPos + (ctx.currentTime - anchorCtxTime);
       if (t >= total) {
         setPlaying(false);
         setTime(total);
@@ -83,10 +132,21 @@ export default function Preview() {
         setTime(t);
       }
     }, 1000 / PLAYBACK_FPS);
-    return () => clearInterval(id);
-  }, [playing, timing, setPlaying, setTime]);
 
-  const total = timing?.total ?? 0;
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      if (source) {
+        try {
+          source.stop();
+        } catch {
+          // Already ended.
+        }
+        source.disconnect();
+      }
+    };
+  }, [playing, rev, total, setPlaying, setTime]);
+
   const currentSlide = slideAt(timing, time);
 
   const fmt = (t: number) => {
@@ -125,7 +185,6 @@ export default function Preview() {
         />
         <span className="time">{fmt(total)}</span>
       </div>
-      <p className="hint center">Preview is video-only; audio is mixed into the export.</p>
     </main>
   );
 }

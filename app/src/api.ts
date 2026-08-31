@@ -62,6 +62,29 @@ export const renderPreview = async (time: number, scale: number): Promise<Previe
 /** Backend answer for a queued frame request that a newer one replaced. */
 export const isSuperseded = (e: unknown): boolean => e === "superseded";
 
+/** Sample rate / channel count of the backend's audio mix (aformat in the plan). */
+const MIX_SAMPLE_RATE = 48000;
+const MIX_CHANNELS = 2;
+
+/**
+ * The project's mixed audio as an AudioBuffer — rendered by the backend
+ * through the same audio plan the export muxes, raw s16le stereo PCM over
+ * binary IPC. Null = the project has no audible audio.
+ */
+export const renderAudioMix = async (ctx: AudioContext): Promise<AudioBuffer | null> => {
+  const buf = await invoke<ArrayBuffer>("render_audio_mix");
+  // Guard the Int16Array view against a torn trailing byte.
+  const pcm = new Int16Array(buf, 0, Math.floor(buf.byteLength / 2));
+  const frames = Math.floor(pcm.length / MIX_CHANNELS);
+  if (frames === 0) return null;
+  const buffer = ctx.createBuffer(MIX_CHANNELS, frames, MIX_SAMPLE_RATE);
+  for (let ch = 0; ch < MIX_CHANNELS; ch++) {
+    const data = buffer.getChannelData(ch);
+    for (let i = 0; i < frames; i++) data[i] = pcm[i * MIX_CHANNELS + ch] / 32768;
+  }
+  return buffer;
+};
+
 export interface ExportProgress {
   done: number;
   total: number;

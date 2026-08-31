@@ -22,6 +22,8 @@ pub struct AppState {
     preview_tx: crossbeam_channel_like::Sender<preview::Job>,
     export_cancel: Mutex<Option<CancelFlag>>,
     fonts: Mutex<Option<Vec<String>>>,
+    /// Mixed preview audio (raw PCM) cached for one project revision.
+    audio_mix: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
 }
 
 /// Tiny stand-in for a channel crate: std mpsc wrapped for Sync cloning.
@@ -239,6 +241,38 @@ async fn render_preview(
     Ok(Response::new((*bytes).clone()))
 }
 
+/// Mixed preview audio: raw interleaved s16le stereo PCM at 48 kHz, rendered
+/// through the same `audio::plan` as export and cached per revision. Empty
+/// response = the project has no audible audio.
+#[tauri::command]
+async fn render_audio_mix(state: State<'_, AppState>) -> Result<Response, String> {
+    let doc = state
+        .current
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|d| (d.project.clone(), d.timeline.clone(), d.rev));
+    let Some((project, timeline, rev)) = doc else {
+        return Err("no project loaded".to_string());
+    };
+    if let Some((cached_rev, bytes)) = state.audio_mix.lock().unwrap().as_ref() {
+        if *cached_rev == rev {
+            return Ok(Response::new((**bytes).clone()));
+        }
+    }
+    let ffmpeg = state.ffmpeg.clone();
+    let pcm = tauri::async_runtime::spawn_blocking(move || {
+        let mut cache = slideshow_core::MediaCache::new(ffmpeg);
+        slideshow_core::audio::render_mix_pcm(&project, &timeline, &mut cache)
+            .map_err(|e| format!("{e:#}"))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let bytes = Arc::new(pcm.unwrap_or_default());
+    *state.audio_mix.lock().unwrap() = Some((rev, bytes.clone()));
+    Ok(Response::new((*bytes).clone()))
+}
+
 #[tauri::command]
 fn list_fonts(state: State<AppState>) -> Vec<String> {
     let mut cached = state.fonts.lock().unwrap();
@@ -361,6 +395,7 @@ pub fn run() {
         preview_tx: tx,
         export_cancel: Mutex::new(None),
         fonts: Mutex::new(None),
+        audio_mix: Mutex::new(None),
     };
 
     // `mut` is only taken by the optional MCP plugin registration below.
@@ -399,6 +434,7 @@ pub fn run() {
             media_thumb,
             list_fonts,
             render_preview,
+            render_audio_mix,
             export_video,
             cancel_export,
             reveal_path,

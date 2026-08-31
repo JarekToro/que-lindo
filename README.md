@@ -100,9 +100,7 @@ correctly at 720p, 1080p, 4K, vertical or square output.
 
 ## Out of scope (v1)
 
-Per-word karaoke text, beat-sync, GPU compositing, real-time full-res audio
-playback in preview, nested timelines. The preview plays video only; audio is
-heard in the exported file.
+Per-word karaoke text, beat-sync, GPU compositing, nested timelines.
 
 ## Fonts
 
