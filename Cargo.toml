@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/slideshow-core", "crates/slideshow-cli"]
+members = ["crates/slideshow-core", "crates/slideshow-cli", "app/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
