@@ -1,9 +1,18 @@
-//! Builds the ffmpeg audio inputs + filter_complex for an export.
+//! Builds the ffmpeg audio inputs + filter_complex for an export, and renders
+//! the same mix to raw PCM for preview playback — one plan, so what the
+//! preview plays is what the export muxes.
 
 use crate::model::{AudioTrack, MediaSource, Project};
 use crate::timeline::Timeline;
 use crate::media::MediaCache;
+use anyhow::Context;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
+
+/// Sample rate the filtergraph normalises to (`aformat` below).
+pub const MIX_SAMPLE_RATE: u32 = 48000;
+/// Channels the filtergraph normalises to.
+pub const MIX_CHANNELS: u32 = 2;
 
 /// One audio source feeding the mix.
 #[derive(Debug, Clone)]
@@ -66,8 +75,50 @@ pub fn plan(project: &Project, timeline: &Timeline, cache: &mut MediaCache) -> A
         }
     }
 
-    let filter = build_filter(&inputs, total);
+    // Export's audio starts at ffmpeg input 1 (index 0 is the rawvideo pipe).
+    let filter = build_filter(&inputs, total, 1);
     AudioPlan { inputs, filter }
+}
+
+/// Render the mixed audio to raw interleaved s16le stereo PCM at 48 kHz.
+/// Same inputs, same filtergraph as export — preview cannot disagree with
+/// the file. Returns `None` when the project has no audible audio.
+pub fn render_mix_pcm(
+    project: &Project,
+    timeline: &Timeline,
+    cache: &mut MediaCache,
+) -> anyhow::Result<Option<Vec<u8>>> {
+    let total = timeline.total_duration();
+    let AudioPlan { inputs, .. } = plan(project, timeline, cache);
+    if inputs.is_empty() {
+        return Ok(None);
+    }
+    // No video pipe here, so the audio files are inputs 0..n.
+    let filter = build_filter(&inputs, total, 0);
+    let ffmpeg = cache
+        .ffmpeg()
+        .context("ffmpeg is required to render the audio mix")?;
+
+    let mut cmd = Command::new(&ffmpeg.ffmpeg);
+    cmd.args(["-v", "error", "-nostdin"]);
+    for input in &inputs {
+        if input.loop_input {
+            cmd.args(["-stream_loop", "-1"]);
+        }
+        cmd.arg("-i").arg(&input.path);
+    }
+    cmd.args(["-filter_complex", &filter, "-map", "[aout]"]);
+    // -t backstops looped inputs; the graph already trims to `total`.
+    cmd.args(["-t", &format!("{total:.4}"), "-f", "s16le", "-c:a", "pcm_s16le", "-"]);
+    cmd.stdin(Stdio::null()).stderr(Stdio::piped()).stdout(Stdio::piped());
+
+    let out = cmd.output().context("spawning ffmpeg for the audio mix")?;
+    anyhow::ensure!(
+        out.status.success(),
+        "audio mix failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    Ok(Some(out.stdout))
 }
 
 fn plan_track(track: &AudioTrack, total: f64, cache: &mut MediaCache) -> Option<AudioInput> {
@@ -104,15 +155,16 @@ fn plan_track(track: &AudioTrack, total: f64, cache: &mut MediaCache) -> Option<
 }
 
 /// Filtergraph: trim/gain/fade/delay each input, then mix and clamp to `total`.
-/// Audio input N is ffmpeg input index N+1 (index 0 is the rawvideo pipe).
-fn build_filter(inputs: &[AudioInput], total: f64) -> String {
+/// Audio input N is ffmpeg input index N + `first_input` (export feeds the
+/// rawvideo pipe as input 0, so it passes 1; an audio-only render passes 0).
+fn build_filter(inputs: &[AudioInput], total: f64, first_input: usize) -> String {
     if inputs.is_empty() {
         return String::new();
     }
     let mut parts: Vec<String> = Vec::new();
     for (i, input) in inputs.iter().enumerate() {
         let mut chain = vec![
-            format!("[{}:a]", i + 1),
+            format!("[{}:a]", i + first_input),
             // Uniform format first so amix never resamples mid-graph.
             "aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo".to_string(),
             format!("atrim=start={:.4}:end={:.4}", input.seek, input.seek + input.take),
@@ -163,12 +215,12 @@ mod tests {
 
     #[test]
     fn empty_plan_has_no_filter() {
-        assert_eq!(build_filter(&[], 10.0), "");
+        assert_eq!(build_filter(&[], 10.0, 1), "");
     }
 
     #[test]
     fn single_input_graph() {
-        let f = build_filter(&[input(0.0, 8.0)], 10.0);
+        let f = build_filter(&[input(0.0, 8.0)], 10.0, 1);
         assert!(f.contains("[1:a]"), "{f}");
         assert!(f.contains("atrim=start=0.0000:end=8.0000"), "{f}");
         assert!(f.contains("amix=inputs=1"), "{f}");
@@ -182,7 +234,7 @@ mod tests {
         i.gain_db = -3.0;
         i.fade_in = 1.0;
         i.fade_out = 2.0;
-        let f = build_filter(&[i], 10.0);
+        let f = build_filter(&[i], 10.0, 1);
         assert!(f.contains("volume=-3.00dB"), "{f}");
         assert!(f.contains("afade=t=in:st=0:d=1.000"), "{f}");
         assert!(f.contains("afade=t=out:st=4.000:d=2.000"), "{f}");
@@ -191,7 +243,7 @@ mod tests {
 
     #[test]
     fn mix_clamps_to_total() {
-        let f = build_filter(&[input(0.0, 8.0), input(4.0, 20.0)], 12.0);
+        let f = build_filter(&[input(0.0, 8.0), input(4.0, 20.0)], 12.0, 1);
         assert!(f.contains("amix=inputs=2"), "{f}");
         assert!(f.contains("atrim=end=12.0000[aout]"), "{f}");
     }
