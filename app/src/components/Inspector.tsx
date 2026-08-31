@@ -285,6 +285,36 @@ export default function Inspector() {
               ]}
             />
           )}
+          {index === project.slides.length - 1 && (
+            <Verbs
+              label="Ends with"
+              options={(
+                [
+                  ["Cut", { type: "cut" }],
+                  ["Fade", { type: "cross_fade" }],
+                  ["Black", { type: "fade_black" }],
+                  ["Slide", { type: "slide", dir: "left" }],
+                  ["Wipe", { type: "wipe", dir: "left" }],
+                ] as [string, TransitionKind][]
+              ).map(([label, kind]) => ({
+                label,
+                active: project.outro.kind.type === kind.type,
+                onPick: () =>
+                  mutate((p) => ({
+                    ...p,
+                    outro: {
+                      kind,
+                      duration:
+                        kind.type === "cut"
+                          ? 0
+                          : p.outro.duration > 0.05
+                            ? p.outro.duration
+                            : 1.5,
+                    },
+                  })),
+              }))}
+            />
+          )}
           <Verbs
             label="Text"
             options={[
@@ -584,6 +614,8 @@ export default function Inspector() {
         <summary>Project</summary>
         <Num label="FPS" value={project.settings.fps} min={10} max={60} step={1}
           onChange={(v) => mutate((p) => ({ ...p, settings: { ...p.settings, fps: v } }))} />
+        <Num label="Outro time" value={project.outro.duration} max={10} step={0.1} unit="s"
+          onChange={(v) => mutate((p) => ({ ...p, outro: { ...p.outro, duration: v } }))} />
         <label className="field">
           <span>Background</span>
           <input

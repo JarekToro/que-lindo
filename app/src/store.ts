@@ -209,8 +209,11 @@ export const useEditor = create<EditorState>((set, get) => ({
     });
     if (seek && timing && timing.spans[clamped]) {
       // Land just past the transition-in so the selected slide itself shows.
+      // The first slide's transition is the intro — it IS the slide showing,
+      // so going back lands on the film's true start.
       const span = timing.spans[clamped];
-      set({ time: Math.min(span.start + span.transition_in + 0.05, span.end - 0.05), playing: false });
+      const lead = clamped === 0 ? 0 : span.transition_in + 0.05;
+      set({ time: Math.min(span.start + lead, span.end - 0.05), playing: false });
     }
   },
 
