@@ -241,9 +241,10 @@ async fn render_preview(
     Ok(Response::new((*bytes).clone()))
 }
 
-/// Mixed preview audio: raw interleaved s16le stereo PCM at 48 kHz, rendered
-/// through the same `audio::plan` as export and cached per revision. Empty
-/// response = the project has no audible audio.
+/// Mixed preview audio, prefixed with the project revision it was rendered
+/// from (u64 LE) so the frontend can detect a stale answer — its request may
+/// race the debounced `set_project`. Body: raw interleaved s16le stereo PCM
+/// at 48 kHz; header only = the project has no audible audio.
 #[tauri::command]
 async fn render_audio_mix(state: State<'_, AppState>) -> Result<Response, String> {
     let doc = state
@@ -255,9 +256,15 @@ async fn render_audio_mix(state: State<'_, AppState>) -> Result<Response, String
     let Some((project, timeline, rev)) = doc else {
         return Err("no project loaded".to_string());
     };
+    let respond = |rev: u64, pcm: &[u8]| {
+        let mut out = Vec::with_capacity(8 + pcm.len());
+        out.extend_from_slice(&rev.to_le_bytes());
+        out.extend_from_slice(pcm);
+        Response::new(out)
+    };
     if let Some((cached_rev, bytes)) = state.audio_mix.lock().unwrap().as_ref() {
         if *cached_rev == rev {
-            return Ok(Response::new((**bytes).clone()));
+            return Ok(respond(rev, bytes));
         }
     }
     let ffmpeg = state.ffmpeg.clone();
@@ -270,7 +277,7 @@ async fn render_audio_mix(state: State<'_, AppState>) -> Result<Response, String
     .map_err(|e| e.to_string())??;
     let bytes = Arc::new(pcm.unwrap_or_default());
     *state.audio_mix.lock().unwrap() = Some((rev, bytes.clone()));
-    Ok(Response::new((*bytes).clone()))
+    Ok(respond(rev, &bytes))
 }
 
 #[tauri::command]

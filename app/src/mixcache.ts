@@ -14,14 +14,23 @@ export function ensureAudioCtx(): AudioContext {
   return audioCtx;
 }
 
-/** The mix for a project revision (backend renders + caches per rev too). */
+/** The mix for a project revision (backend renders + caches per rev too).
+ * The backend may briefly lag the frontend behind the debounced project
+ * sync; stale answers are retried until the revisions agree. */
 export function mixForRev(ctx: AudioContext, rev: number): Promise<AudioBuffer | null> {
-  if (mixCache?.rev === rev) return Promise.resolve(mixCache.buffer);
-  if (inFlight?.rev === rev) return inFlight.promise;
-  const promise = renderAudioMix(ctx).then((buffer) => {
-    mixCache = { rev, buffer };
+  if (mixCache && mixCache.rev >= rev) return Promise.resolve(mixCache.buffer);
+  if (inFlight && inFlight.rev >= rev) return inFlight.promise;
+  const promise = (async () => {
+    for (let attempt = 0; ; attempt++) {
+      const { rev: gotRev, buffer } = await renderAudioMix(ctx);
+      if (gotRev >= rev || attempt >= 5) {
+        mixCache = { rev: gotRev, buffer };
+        return buffer;
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  })().finally(() => {
     if (inFlight?.rev === rev) inFlight = null;
-    return buffer;
   });
   inFlight = { rev, promise };
   return promise;

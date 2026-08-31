@@ -69,20 +69,25 @@ const MIX_CHANNELS = 2;
 /**
  * The project's mixed audio as an AudioBuffer — rendered by the backend
  * through the same audio plan the export muxes, raw s16le stereo PCM over
- * binary IPC. Null = the project has no audible audio.
+ * binary IPC. The response opens with the backend's project revision (u64
+ * LE): a request can race the debounced project sync, so callers compare
+ * `rev` with their own and retry on a stale answer. Null buffer = the
+ * project has no audible audio at that revision.
  */
-export const renderAudioMix = async (ctx: AudioContext): Promise<AudioBuffer | null> => {
+export const renderAudioMix = async (
+  ctx: AudioContext,
+): Promise<{ rev: number; buffer: AudioBuffer | null }> => {
   const buf = await invoke<ArrayBuffer>("render_audio_mix");
-  // Guard the Int16Array view against a torn trailing byte.
-  const pcm = new Int16Array(buf, 0, Math.floor(buf.byteLength / 2));
+  const rev = Number(new DataView(buf).getBigUint64(0, true));
+  const pcm = new Int16Array(buf, 8, Math.floor((buf.byteLength - 8) / 2));
   const frames = Math.floor(pcm.length / MIX_CHANNELS);
-  if (frames === 0) return null;
+  if (frames === 0) return { rev, buffer: null };
   const buffer = ctx.createBuffer(MIX_CHANNELS, frames, MIX_SAMPLE_RATE);
   for (let ch = 0; ch < MIX_CHANNELS; ch++) {
     const data = buffer.getChannelData(ch);
     for (let i = 0; i < frames; i++) data[i] = pcm[i * MIX_CHANNELS + ch] / 32768;
   }
-  return buffer;
+  return { rev, buffer };
 };
 
 export interface ExportProgress {
