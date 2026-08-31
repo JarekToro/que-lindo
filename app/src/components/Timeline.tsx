@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { revealPath } from "../api";
 import { layoutRects } from "../layout";
 import { ensureAudioCtx, mixForRev } from "../mixcache";
 import {
@@ -28,6 +29,8 @@ type DragPayload =
   | { kind: "slide"; index: number }
   | { kind: "media"; path: string }
   | { kind: "member"; slide: number; cell: number };
+
+type MenuEntry = { label: string; disabled?: boolean; onPick: () => void } | "sep";
 
 /** Time mode's ruler scale: one second of film is this many pixels. */
 const PX_PER_SEC = 24;
@@ -187,6 +190,8 @@ export default function Timeline({
   const project = useEditor((s) => s.project);
   const selected = useEditor((s) => s.selectedSlide);
   const selectSlide = useEditor((s) => s.selectSlide);
+  const selectedIds = useEditor((s) => s.selectedIds);
+  const setSelection = useEditor((s) => s.setSelection);
   const selectText = useEditor((s) => s.selectText);
   const mutate = useEditor((s) => s.mutate);
   const media = useEditor((s) => s.media);
@@ -478,6 +483,176 @@ export default function Timeline({
 
   const addEmpty = () => insertSlides(slides.length, [defaultSlide()]);
 
+  // ---- multi-selection ----
+  const selectedIdxs = useMemo(
+    () =>
+      selectedIds
+        .map((id) => slides.findIndex((s) => s.id === id))
+        .filter((i) => i >= 0)
+        .sort((a, b) => a - b),
+    [selectedIds, slides],
+  );
+  const shiftAnchor = useRef<number | null>(null);
+
+  const rangeIds = (a: number, b: number) =>
+    slides.slice(Math.min(a, b), Math.max(a, b) + 1).map((s) => s.id);
+
+  const clickCard = (e: React.MouseEvent, i: number) => {
+    if (e.metaKey || e.ctrlKey) {
+      const id = slides[i].id;
+      const ids = selectedIds.includes(id)
+        ? selectedIds.filter((x) => x !== id)
+        : [...selectedIds, id];
+      setSelection(ids.length ? ids : [id], i);
+      shiftAnchor.current = i;
+    } else if (e.shiftKey) {
+      const a = shiftAnchor.current ?? selected;
+      setSelection(rangeIds(a, i), i);
+    } else {
+      shiftAnchor.current = i;
+      selectSlide(i);
+    }
+  };
+
+  /** Hide: the slides leave the film; their photos stay on the shelf. */
+  const hideSlides = (idxs: number[]) => {
+    if (!idxs.length) return;
+    const drop = new Set(idxs);
+    mutate((p) => ({ ...p, slides: p.slides.filter((_, i) => !drop.has(i)) }));
+    selectSlide(Math.max(0, Math.min(idxs[0], slides.length - idxs.length - 1)), false);
+  };
+
+  const duplicateSlides = (idxs: number[]) => {
+    if (!idxs.length) return;
+    const copies = idxs.map((i): Slide => ({
+      ...(JSON.parse(JSON.stringify(slides[i])) as Slide),
+      id: freshId("slide"),
+    }));
+    insertSlides(idxs[idxs.length - 1] + 1, copies);
+  };
+
+  /** Merge the selection into one group slide at the earliest position. */
+  const mergeSlides = (idxs: number[]) => {
+    const withCells = idxs.filter((i) => slides[i].cells.length > 0);
+    const cells = withCells.flatMap((i) => slides[i].cells);
+    if (withCells.length < 2 || cells.length > GROUP_MAX) return;
+    const targetIdx = withCells[0];
+    const target = slides[targetIdx];
+    const drop = new Set(withCells.slice(1));
+    mutate((p) => ({
+      ...p,
+      slides: p.slides
+        .map((s, i) =>
+          i === targetIdx
+            ? {
+                ...target,
+                cells: cells.map((c): Cell => ({ ...c, fit: "cover", motion: { type: "none" } })),
+                layout: autoLayout(cells.length),
+                margin: 0.04,
+                gutter: 0.02,
+                background: { type: "default" as const },
+              }
+            : s,
+        )
+        .filter((_, i) => !drop.has(i)),
+    }));
+    selectSlide(targetIdx, false);
+  };
+
+  /** Explode a group: every member becomes its own slide in place. */
+  const splitApart = (i: number) => {
+    const group = slides[i];
+    if (group.cells.length < 2) return;
+    mutate((p) => {
+      const first = dissolveGroup({ ...group, cells: [group.cells[0]] }, cellInfo(group.cells[0], thumbs));
+      const rest = group.cells.slice(1).map((c) => slideForCell(c, cellInfo(c, thumbs)));
+      const next = [...p.slides];
+      next.splice(i, 1, first, ...rest);
+      return { ...p, slides: next };
+    });
+    setOpenGroupId(null);
+  };
+
+  // ---- context menu ----
+  const [menu, setMenu] = useState<{ x: number; y: number; entries: MenuEntry[] } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
+
+  const openMenu = (e: React.MouseEvent, entries: MenuEntry[]) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: Math.min(e.clientX, window.innerWidth - 230), y: Math.min(e.clientY, window.innerHeight - 200), entries });
+  };
+
+  const cardMenu = (e: React.MouseEvent, i: number) => {
+    const inSelection = selectedIds.includes(slides[i].id);
+    const idxs = inSelection && selectedIdxs.length > 1 ? selectedIdxs : [i];
+    if (!inSelection) {
+      shiftAnchor.current = i;
+      selectSlide(i, false);
+    }
+    const n = idxs.length;
+    const s = slides[i];
+    const entries: MenuEntry[] = [];
+    if (n > 1) {
+      const withCells = idxs.filter((j) => slides[j].cells.length > 0);
+      const total = withCells.reduce((a, j) => a + slides[j].cells.length, 0);
+      entries.push({
+        label: `Group ${withCells.length} photos into one slide`,
+        disabled: withCells.length < 2 || total > GROUP_MAX,
+        onPick: () => mergeSlides(idxs),
+      });
+      entries.push({ label: `Duplicate ${n} slides`, onPick: () => duplicateSlides(idxs) });
+      entries.push("sep");
+      entries.push({ label: `Hide ${n} slides — move to “Not used”`, onPick: () => hideSlides(idxs) });
+    } else {
+      if (s.cells.length > 1) {
+        entries.push({
+          label: "Open group",
+          onPick: () => {
+            setOpenGroupId(s.id);
+            setMemberFocus(0);
+          },
+        });
+        entries.push({ label: `Split into ${s.cells.length} slides`, onPick: () => splitApart(i) });
+        entries.push("sep");
+      }
+      entries.push({ label: "Duplicate", onPick: () => duplicate(i) });
+      entries.push({ label: "Add blank slide after", onPick: () => insertSlides(i + 1, [defaultSlide()]) });
+      entries.push("sep");
+      entries.push({
+        label: s.cells.length > 0 ? "Hide — move to “Not used”" : "Delete slide",
+        onPick: () => hideSlides([i]),
+      });
+    }
+    openMenu(e, entries);
+  };
+
+  const shelfMenu = (e: React.MouseEvent, m: MediaItem) => {
+    const entries: MenuEntry[] = [];
+    if (m.status === "ready" && (m.info.is_image || m.info.has_video)) {
+      entries.push({ label: "Add to the timeline", onPick: () => insertSlides(slides.length, [slideForMedia(m)]) });
+    }
+    if (m.status === "ready" && m.info.has_audio && !m.info.has_video) {
+      entries.push({ label: "Add as music", onPick: () => mutate((p) => ({ ...p, audio: [...p.audio, audioTrackFor(m)] })) });
+    }
+    entries.push({ label: "Reveal in Finder", onPick: () => void revealPath(m.path) });
+    entries.push("sep");
+    entries.push({ label: "Remove from project", onPick: () => removeMedia(m.path) });
+    openMenu(e, entries);
+  };
+
   const slideForShelfItem = (m: MediaItem): Slide | null =>
     m.status === "ready" && (m.info.is_image || m.info.has_video) ? slideForMedia(m) : null;
 
@@ -607,10 +782,17 @@ export default function Timeline({
       e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : e.key === "ArrowUp" ? -cols : e.key === "ArrowDown" ? cols : 0;
     if (step !== 0) {
       e.preventDefault();
+      const to = Math.max(0, Math.min(selected + step, slides.length - 1));
       if (e.altKey) {
         move(selected, selected + step);
+      } else if (e.shiftKey || e.metaKey || e.ctrlKey) {
+        // Extend the selection from the anchor (⇧ or ⌘ + arrows).
+        const a = shiftAnchor.current ?? selected;
+        shiftAnchor.current = a;
+        setSelection(rangeIds(a, to), to);
+        focusCard(to);
       } else {
-        const to = Math.max(0, Math.min(selected + step, slides.length - 1));
+        shiftAnchor.current = to;
         selectSlide(to);
         focusCard(to);
       }
@@ -630,12 +812,18 @@ export default function Timeline({
       }
     } else if (e.key === "Backspace" || e.key === "Delete") {
       e.preventDefault();
-      if (slides[selected]) {
+      if (selectedIdxs.length > 1) {
+        hideSlides(selectedIdxs);
+      } else if (slides[selected]) {
         removeSlide(selected);
         focusCard(Math.max(0, Math.min(selected, slides.length - 2)));
       }
+    } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "g") {
+      e.preventDefault();
+      if (selectedIdxs.length > 1) mergeSlides(selectedIdxs);
     } else if (e.key === "Escape") {
-      setOpenGroupId(null);
+      if (selectedIdxs.length > 1) selectSlide(selected, false);
+      else setOpenGroupId(null);
     }
   };
 
@@ -699,6 +887,11 @@ export default function Timeline({
               onPointerMove={moveDrag}
               onPointerUp={endDrag}
               onClick={() => setMemberFocus(j)}
+              onContextMenu={(e) =>
+                openMenu(e, [
+                  { label: "Split into its own slide", onPick: () => splitMember(openIdx, j) },
+                ])
+              }
             >
               {thumb ? <img src={thumb} alt="" draggable={false} /> : <span className="thumb-empty" />}
               <button
@@ -743,7 +936,8 @@ export default function Timeline({
         }}
         className={[
           "slide-card",
-          i === selected ? "selected" : "",
+          selectedIds.includes(s.id) ? "selected" : "",
+          i === selected ? "anchor" : "",
           isReceiving ? "receiving" : "",
           insertBefore ? "insert-before" : "",
           insertAfter ? "insert-after" : "",
@@ -759,7 +953,8 @@ export default function Timeline({
         onPointerDown={(e) => beginDrag(e, { kind: "slide", index: i })}
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
-        onClick={() => selectSlide(i)}
+        onClick={(e) => clickCard(e, i)}
+        onContextMenu={(e) => cardMenu(e, i)}
         onDoubleClick={() => {
           if (mode === "arrange" && s.cells.length > 1) {
             setOpenGroupId(s.id);
@@ -986,6 +1181,7 @@ export default function Timeline({
               }}
               onPointerMove={moveDrag}
               onPointerUp={endDrag}
+              onContextMenu={(e) => shelfMenu(e, m)}
             >
               {m.status === "ready" && m.thumb ? (
                 <img src={m.thumb} alt="" draggable={false} />
@@ -1022,6 +1218,33 @@ export default function Timeline({
       {ghost && (
         <div className="drag-ghost" style={{ left: ghost.x + 14, top: ghost.y + 12 }} aria-hidden="true">
           {ghost.label}
+        </div>
+      )}
+
+      {menu && (
+        <div
+          className="context-menu"
+          role="menu"
+          style={{ left: menu.x, top: menu.y }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          {menu.entries.map((entry, k) =>
+            entry === "sep" ? (
+              <div key={k} className="menu-sep" role="separator" />
+            ) : (
+              <button
+                key={k}
+                role="menuitem"
+                disabled={entry.disabled}
+                onClick={() => {
+                  setMenu(null);
+                  entry.onPick();
+                }}
+              >
+                {entry.label}
+              </button>
+            ),
+          )}
         </div>
       )}
     </footer>

@@ -141,6 +141,17 @@ fn save_project(path: String, project: Project) -> Result<(), String> {
     std::fs::write(&path, project.to_json()).map_err(|e| format!("writing {path}: {e}"))
 }
 
+/// Write the backend's current document (the last `set_project`) to disk —
+/// a recovery path that needs nothing from the frontend.
+#[tauri::command]
+fn save_current_project(state: State<AppState>, path: String) -> Result<(), String> {
+    let current = state.current.lock().unwrap();
+    let Some(doc) = current.as_ref() else {
+        return Err("no project loaded".to_string());
+    };
+    std::fs::write(&path, doc.project.to_json()).map_err(|e| format!("writing {path}: {e}"))
+}
+
 /// Async + blocking pool so the frontend can probe several files at once
 /// (its import worker pool bounds the concurrency).
 #[tauri::command]
@@ -437,6 +448,7 @@ pub fn run() {
             set_project,
             load_project,
             save_project,
+            save_current_project,
             probe_media,
             media_thumb,
             list_fonts,

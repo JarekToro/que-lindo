@@ -71,6 +71,9 @@ export interface EditorState {
   timing: Timing | null;
 
   selectedSlide: number;
+  /** Multi-selection as slide ids (survives reorder); always contains the
+   * anchor `selectedSlide`'s id. */
+  selectedIds: string[];
   selectedCell: number | null;
   selectedText: number | null;
 
@@ -94,6 +97,8 @@ export interface EditorState {
   setUi(patch: Partial<UiPrefs>): void;
   updateSlide(index: number, patch: Partial<Slide>): void;
   selectSlide(index: number, seek?: boolean): void;
+  /** Replace the multi-selection (ids) and move the anchor. */
+  setSelection(ids: string[], anchor: number): void;
   selectCell(index: number | null): void;
   selectText(index: number | null): void;
   beginImport(paths: string[]): void;
@@ -132,6 +137,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   dirty: false,
   timing: null,
   selectedSlide: 0,
+  selectedIds: [],
   selectedCell: null,
   selectedText: null,
   media: [],
@@ -194,12 +200,24 @@ export const useEditor = create<EditorState>((set, get) => ({
   selectSlide(index, seek = true) {
     const { timing, project } = get();
     const clamped = Math.max(0, Math.min(index, project.slides.length - 1));
-    set({ selectedSlide: clamped, selectedCell: null, selectedText: null });
+    const id = project.slides[clamped]?.id;
+    set({
+      selectedSlide: clamped,
+      selectedIds: id ? [id] : [],
+      selectedCell: null,
+      selectedText: null,
+    });
     if (seek && timing && timing.spans[clamped]) {
       // Land just past the transition-in so the selected slide itself shows.
       const span = timing.spans[clamped];
       set({ time: Math.min(span.start + span.transition_in + 0.05, span.end - 0.05), playing: false });
     }
+  },
+
+  setSelection(ids, anchor) {
+    const { project } = get();
+    const clamped = Math.max(0, Math.min(anchor, project.slides.length - 1));
+    set({ selectedSlide: clamped, selectedIds: ids, selectedCell: null, selectedText: null });
   },
 
   selectCell(index) {
