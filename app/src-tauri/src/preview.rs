@@ -1,17 +1,13 @@
-//! preview:// protocol — renders frames with the same compositor as export.
-//!
-//! URL (via convertFileSrc): the "file path" is a query-ish string
-//! `t=<seconds>&s=<scale>&rev=<revision>`, percent-encoded by the frontend.
+//! Preview rendering thread — frames come from the same compositor as export.
+//! The frontend calls the `render_preview` command; frames return as
+//! data:image/png;base64 URLs (no custom scheme, identical on all platforms).
 
+use base64::Engine;
 use slideshow_core::{Ffmpeg, Project, Renderer, Timeline};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use tauri::http::{header, Request, Response, StatusCode};
-use tauri::UriSchemeResponder;
 
-#[allow(dead_code)]
 pub struct CurrentDoc {
-    pub rev: u64,
     pub project: Arc<Project>,
     pub timeline: Arc<Timeline>,
 }
@@ -19,25 +15,7 @@ pub struct CurrentDoc {
 pub struct Job {
     pub time: f64,
     pub scale: f32,
-    pub responder: UriSchemeResponder,
-}
-
-pub fn handle_request(
-    tx: &crate::crossbeam_channel_like::Sender<Job>,
-    request: Request<Vec<u8>>,
-    responder: UriSchemeResponder,
-) {
-    let raw = percent_decode(request.uri().path().trim_start_matches('/'));
-    let mut time = 0.0f64;
-    let mut scale = 0.5f32;
-    for pair in raw.split('&') {
-        match pair.split_once('=') {
-            Some(("t", v)) => time = v.parse().unwrap_or(0.0),
-            Some(("s", v)) => scale = v.parse().unwrap_or(0.5),
-            _ => {}
-        }
-    }
-    tx.send(Job { time, scale, responder });
+    pub reply: Sender<Result<String, String>>,
 }
 
 pub fn spawn_render_thread(
@@ -48,53 +26,28 @@ pub fn spawn_render_thread(
     std::thread::spawn(move || {
         let mut renderer = Renderer::new(ffmpeg);
         while let Ok(job) = rx.recv() {
-            let doc = current.lock().unwrap().as_ref().map(|d| (d.project.clone(), d.timeline.clone()));
-            let response = match doc {
-                None => plain_response(StatusCode::NO_CONTENT, Vec::new(), "text/plain"),
-                Some((project, timeline)) => {
-                    match renderer.render_frame(&project, &timeline, job.time, job.scale) {
-                        Ok(frame) => match frame.encode_png() {
-                            Ok(png) => plain_response(StatusCode::OK, png, "image/png"),
-                            Err(e) => error_response(&format!("png encode: {e}")),
-                        },
-                        Err(e) => error_response(&format!("render: {e:#}")),
-                    }
-                }
+            let doc = current
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|d| (d.project.clone(), d.timeline.clone()));
+            let result = match doc {
+                None => Err("no project loaded".to_string()),
+                Some((project, timeline)) => renderer
+                    .render_frame(&project, &timeline, job.time, job.scale)
+                    .map_err(|e| format!("render: {e:#}"))
+                    .and_then(|frame| frame.encode_png().map_err(|e| format!("png encode: {e}")))
+                    .map(|png| {
+                        format!(
+                            "data:image/png;base64,{}",
+                            base64::engine::general_purpose::STANDARD.encode(png)
+                        )
+                    }),
             };
-            job.responder.respond(response);
+            if let Err(e) = &result {
+                log::warn!("preview render failed: {e}");
+            }
+            let _ = job.reply.send(result);
         }
     });
-}
-
-fn plain_response(status: StatusCode, body: Vec<u8>, mime: &str) -> Response<Vec<u8>> {
-    Response::builder()
-        .status(status)
-        .header(header::CONTENT_TYPE, mime)
-        .header(header::CACHE_CONTROL, "no-store")
-        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-        .body(body)
-        .unwrap()
-}
-
-fn error_response(msg: &str) -> Response<Vec<u8>> {
-    log::warn!("preview error: {msg}");
-    plain_response(StatusCode::INTERNAL_SERVER_ERROR, msg.as_bytes().to_vec(), "text/plain")
-}
-
-fn percent_decode(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() + 1 && i + 2 < bytes.len() {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(bytes[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }

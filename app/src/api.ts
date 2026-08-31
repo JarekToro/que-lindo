@@ -1,8 +1,9 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { FfmpegStatus, ImportedMedia, Project, Timing } from "./types";
 
 export const checkFfmpeg = () => invoke<FfmpegStatus>("check_ffmpeg");
+export const startupProject = () => invoke<string | null>("startup_project");
 export const probeMedia = (path: string) => invoke<ImportedMedia>("probe_media", { path });
 export const listFonts = () => invoke<string[]>("list_fonts");
 export const loadProject = (path: string) => invoke<Project>("load_project", { path });
@@ -16,10 +17,9 @@ export const exportVideo = (project: Project, outPath: string, scale: number, cr
 export const setProjectBackend = (project: Project, rev: number) =>
   invoke<Timing>("set_project", { project, rev });
 
-/** URL for the preview:// frame at time t (same compositor as export). */
-export function previewUrl(t: number, scale: number, rev: number): string {
-  return convertFileSrc(`t=${t.toFixed(3)}&s=${scale}&r=${rev}`, "preview");
-}
+/** Render a preview frame (same compositor as export); returns a data URL. */
+export const renderPreview = (time: number, scale: number) =>
+  invoke<string>("render_preview", { time, scale });
 
 export interface ExportProgress {
   done: number;

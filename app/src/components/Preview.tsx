@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { previewUrl } from "../api";
+import { renderPreview } from "../api";
 import { slideAt, useEditor } from "../store";
 
 const PLAYBACK_FPS = 12;
@@ -15,34 +15,49 @@ export default function Preview() {
   const selectSlide = useEditor((s) => s.selectSlide);
   const project = useEditor((s) => s.project);
 
-  const imgRef = useRef<HTMLImageElement>(null);
   const [src, setSrc] = useState<string>("");
-  const inFlight = useRef<{ time: number; rev: number } | null>(null);
+  const inFlight = useRef(false);
   const wanted = useRef({ time: 0, rev: 0 });
+  const served = useRef({ time: -1, rev: -1 });
 
   const scale = project.settings.width > 2000 ? 0.33 : 0.5;
 
-  // Request the newest wanted frame, one request in flight at a time.
-  const pump = () => {
+  // Fetch the newest wanted frame, one request in flight at a time.
+  const pump = async () => {
     if (inFlight.current) return;
-    inFlight.current = { ...wanted.current };
-    setSrc(previewUrl(wanted.current.time, scale, wanted.current.rev));
+    inFlight.current = true;
+    try {
+      let failures = 0;
+      while (
+        served.current.time !== wanted.current.time ||
+        served.current.rev !== wanted.current.rev
+      ) {
+        const target = { ...wanted.current };
+        try {
+          const url = await renderPreview(target.time, scale);
+          setSrc(url);
+          served.current = target;
+          failures = 0;
+        } catch (e) {
+          // Likely a startup race (project not posted yet) — retry briefly.
+          if (++failures > 20) {
+            console.warn("preview giving up", e);
+            served.current = target;
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 300));
+        }
+      }
+    } finally {
+      inFlight.current = false;
+    }
   };
 
   useEffect(() => {
     wanted.current = { time, rev };
-    pump();
+    void pump();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [time, rev, scale]);
-
-  const onLoaded = () => {
-    const served = inFlight.current;
-    inFlight.current = null;
-    const cur = wanted.current;
-    if (!served || served.time !== cur.time || served.rev !== cur.rev) {
-      pump();
-    }
-  };
 
   // Playback loop (video preview only — audio plays in the export).
   useEffect(() => {
@@ -72,11 +87,7 @@ export default function Preview() {
   return (
     <main className="preview">
       <div className="preview-stage">
-        {src ? (
-          <img ref={imgRef} src={src} onLoad={onLoaded} onError={onLoaded} alt="preview" />
-        ) : (
-          <div className="hint">No preview yet</div>
-        )}
+        {src ? <img src={src} alt="preview" /> : <div className="hint">No preview yet</div>}
       </div>
       <div className="transport">
         <button onClick={() => selectSlide(currentSlide - 1)} title="Previous slide">

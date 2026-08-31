@@ -116,7 +116,9 @@ export const useEditor = create<EditorState>((set, get) => ({
     const clamped = Math.max(0, Math.min(index, project.slides.length - 1));
     set({ selectedSlide: clamped, selectedCell: null, selectedText: null });
     if (seek && timing && timing.spans[clamped]) {
-      set({ time: timing.spans[clamped].start + 0.05, playing: false });
+      // Land just past the transition-in so the selected slide itself shows.
+      const span = timing.spans[clamped];
+      set({ time: Math.min(span.start + span.transition_in + 0.05, span.end - 0.05), playing: false });
     }
   },
 

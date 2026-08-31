@@ -78,6 +78,11 @@ impl Timeline {
         self.starts[i] + self.durations[i]
     }
 
+    /// Effective duration of the transition into slide `i` (0 for the first).
+    pub fn transition_in(&self, i: usize) -> f64 {
+        self.trans_in[i]
+    }
+
     pub fn num_slides(&self) -> usize {
         self.starts.len()
     }
