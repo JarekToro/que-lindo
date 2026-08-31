@@ -5,6 +5,8 @@ import type {
   AudioTrack,
   Cell,
   ImportedMedia,
+  Layout,
+  MediaInfo,
   Motion,
   Project,
   Slide,
@@ -87,6 +89,74 @@ export function slideForMedia(media: ImportedMedia): Slide {
     slide.background = { type: "blur", cell: 0, sigma: 0.02, dim: 0.35 };
   }
   return slide;
+}
+
+// ---- grouping (a group is just a Slide with more than one cell) ----
+
+/** Most photos a group holds; past this a drop refuses to bind. */
+export const GROUP_MAX = 8;
+
+/** The composed layout the product chooses for an n-photo group. The user can
+ * still change it per slide — this is a default, not a rule. */
+export function autoLayout(n: number): Layout {
+  if (n <= 1) return { type: "single" };
+  if (n === 2) return { type: "columns", weights: [] };
+  if (n === 3) return { type: "featured", side: "left", ratio: 0.62 };
+  if (n === 4) return { type: "grid", rows: 2, cols: 2 };
+  if (n <= 6) return { type: "grid", rows: 2, cols: 3 };
+  return { type: "grid", rows: 2, cols: 4 };
+}
+
+/** Merge `source`'s cells into `target` — the bind gesture. Keeps target's
+ * identity, duration, texts and transition; recomposes the collage. */
+export function bindSlides(target: Slide, source: Slide): Slide {
+  const cells = [...target.cells, ...source.cells].map(
+    (c): Cell => ({ ...c, fit: "cover", motion: { type: "none" } }),
+  );
+  return {
+    ...target,
+    cells,
+    layout: autoLayout(cells.length),
+    margin: 0.04,
+    gutter: 0.02,
+    background: { type: "default" },
+  };
+}
+
+/** A single-photo slide for a cell lifted out of a group — the inverse of
+ * bind. `info` (when the media is still in the bin) restores the portrait
+ * and motion treatment `slideForMedia` would have chosen. */
+export function slideForCell(cell: Cell, info?: MediaInfo): Slide {
+  const portrait = info ? info.height > info.width && info.is_image : false;
+  const isImage = cell.source.type === "image";
+  const slide = defaultSlide({
+    duration: info && !info.is_image ? Math.min(Math.max(info.duration, 2), 12) : 5,
+    cells: [
+      {
+        ...cell,
+        fit: portrait ? "contain" : "cover",
+        motion: isImage && !portrait ? autoMotion(0) : { type: "none" },
+      },
+    ],
+  });
+  if (portrait) {
+    slide.margin = 0.05;
+    slide.background = { type: "blur", cell: 0, sigma: 0.02, dim: 0.35 };
+  }
+  return slide;
+}
+
+/** A group that shrank to one member stops being a group: the survivor
+ * becomes an ordinary single slide in place. */
+export function dissolveGroup(slide: Slide, info?: MediaInfo): Slide {
+  const single = slideForCell(slide.cells[0], info);
+  return {
+    ...single,
+    id: slide.id,
+    duration: slide.duration,
+    texts: slide.texts,
+    transition: slide.transition,
+  };
 }
 
 export function audioTrackFor(media: ImportedMedia): AudioTrack {
