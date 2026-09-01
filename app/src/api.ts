@@ -54,8 +54,9 @@ export const renderPreview = async (
   time: number,
   scale: number,
   revealTexts = false,
+  minRev = 0,
 ): Promise<PreviewFrame> => {
-  const buf = await invoke<ArrayBuffer>("render_preview", { time, scale, revealTexts });
+  const buf = await invoke<ArrayBuffer>("render_preview", { time, scale, revealTexts, minRev });
   const view = new DataView(buf);
   return {
     width: view.getUint32(0, true),

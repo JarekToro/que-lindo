@@ -31,6 +31,10 @@ pub struct Job {
     pub scale: f32,
     /// Draw text overlays at full opacity (the editing view).
     pub reveal_texts: bool,
+    /// The frontend's revision when it asked. The request can beat the
+    /// debounced `set_project`, so the render waits (briefly) for the doc
+    /// to catch up rather than serving a stale frame as the new revision.
+    pub min_rev: u64,
     pub reply: Sender<Result<Arc<Vec<u8>>, String>>,
 }
 
@@ -142,11 +146,23 @@ pub fn spawn_render_thread(
                 jobs.push(j);
             }
 
-            let doc = current
-                .lock()
-                .unwrap()
-                .as_ref()
-                .map(|d| (d.project.clone(), d.timeline.clone(), d.rev));
+            let newest_min_rev = jobs.last().map(|j| j.min_rev).unwrap_or(0);
+            let fetch = || {
+                current
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .map(|d| (d.project.clone(), d.timeline.clone(), d.rev))
+            };
+            let mut doc = fetch();
+            // Give the debounced project sync a moment to land the revision
+            // this request was made against (bounded, then render what's here).
+            let mut waits = 0;
+            while doc.as_ref().map(|d| d.2 < newest_min_rev).unwrap_or(false) && waits < 12 {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                doc = fetch();
+                waits += 1;
+            }
             let Some((project, timeline, rev)) = doc else {
                 for job in jobs {
                     let _ = job.reply.send(Err("no project loaded".to_string()));

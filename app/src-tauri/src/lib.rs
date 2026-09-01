@@ -254,9 +254,10 @@ async fn render_preview(
     time: f64,
     scale: f32,
     reveal_texts: bool,
+    min_rev: u64,
 ) -> Result<Response, String> {
     let (tx, rx) = std::sync::mpsc::channel();
-    state.preview_tx.send(preview::Job { time, scale, reveal_texts, reply: tx });
+    state.preview_tx.send(preview::Job { time, scale, reveal_texts, min_rev, reply: tx });
     let bytes = tauri::async_runtime::spawn_blocking(move || rx.recv().map_err(|e| e.to_string())?)
         .await
         .map_err(|e| e.to_string())??;
