@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "dev:mcp": "tauri dev --features mcp"
+    "dev:mcp": "tauri dev --features mcp",
+    "e2e": "node ../e2e/run.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

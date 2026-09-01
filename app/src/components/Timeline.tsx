@@ -1383,9 +1383,13 @@ export default function Timeline({
             <div
               className="time-ruler"
               onPointerDown={(e) => {
-                e.currentTarget.setPointerCapture(e.pointerId);
                 setPlaying(false);
                 seekAt(e);
+                try {
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                } catch {
+                  // Synthetic pointers have no capturable id.
+                }
               }}
               onPointerMove={(e) => {
                 if (e.buttons & 1) seekAt(e);
