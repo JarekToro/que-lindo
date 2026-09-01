@@ -57,11 +57,13 @@ export function defaultSlide(partial: Partial<Slide> = {}): Slide {
   };
 }
 
-/** Alternate slow zoom in/out so consecutive photos don't move identically. */
-export function autoMotion(index: number): Motion {
+/** Alternate slow zoom in/out so consecutive photos don't move identically.
+ * `focus` (the detected focal point) aims the zoom; center otherwise. */
+export function autoMotion(index: number, focus?: [number, number] | null): Motion {
+  const origin: [number, number] = focus ?? [0.5, 0.5];
   return index % 2 === 0
-    ? { type: "zoom", from: 1.0, to: 1.12, origin: [0.5, 0.5] }
-    : { type: "zoom", from: 1.12, to: 1.0, origin: [0.5, 0.5] };
+    ? { type: "zoom", from: 1.0, to: 1.12, origin }
+    : { type: "zoom", from: 1.12, to: 1.0, origin };
 }
 
 export function cellFor(media: ImportedMedia, index = 0): Cell {
@@ -71,7 +73,7 @@ export function cellFor(media: ImportedMedia, index = 0): Cell {
   return {
     source,
     fit: "cover",
-    motion: media.info.is_image ? autoMotion(index) : { type: "none" },
+    motion: media.info.is_image ? autoMotion(index, media.focus) : { type: "none" },
     corner_radius: 0,
     border: null,
   };

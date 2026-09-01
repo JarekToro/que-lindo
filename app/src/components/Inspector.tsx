@@ -39,6 +39,7 @@ export default function Inspector() {
   const selectedText = useEditor((s) => s.selectedText);
   const selectText = useEditor((s) => s.selectText);
   const media = useEditor((s) => s.media);
+  const playSlide = useEditor((s) => s.playSlide);
   const [fonts, setFonts] = useState<string[]>([]);
 
   useEffect(() => {
@@ -125,18 +126,27 @@ export default function Inspector() {
             : isGroup
               ? `Slide ${index + 1} · group of ${slide.cells.length}`
               : `Slide ${index + 1}`}
-        {(focusText || focusCell) && (
+        <span className="head-actions">
           <button
             className="ghost"
-            title="Back to the slide"
-            onClick={() => {
-              selectCell(null);
-              selectText(null);
-            }}
+            title="Play just this slide, from its start"
+            onClick={() => playSlide(index)}
           >
-            ← Slide
+            ▶ Slide
           </button>
-        )}
+          {(focusText || focusCell) && (
+            <button
+              className="ghost"
+              title="Back to the slide"
+              onClick={() => {
+                selectCell(null);
+                selectText(null);
+              }}
+            >
+              ← Slide
+            </button>
+          )}
+        </span>
       </div>
 
       {focusText ? (
