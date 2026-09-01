@@ -16,6 +16,7 @@ export default function Preview() {
   const rev = useEditor((s) => s.rev);
   const playing = useEditor((s) => s.playing);
   const setPlaying = useEditor((s) => s.setPlaying);
+  const playUntil = useEditor((s) => s.playUntil);
   const selectSlide = useEditor((s) => s.selectSlide);
   const selectedText = useEditor((s) => s.selectedText);
   const selectText = useEditor((s) => s.selectText);
@@ -118,12 +119,13 @@ export default function Preview() {
     };
     void begin();
 
+    const limit = playUntil !== null ? Math.min(playUntil, total) : total;
     const id = setInterval(() => {
       if (!started || cancelled) return;
       const t = anchorPos + (ctx.currentTime - anchorCtxTime);
-      if (t >= total) {
+      if (t >= limit) {
         setPlaying(false);
-        setTime(total);
+        setTime(limit);
       } else {
         setTime(t);
       }
@@ -141,7 +143,7 @@ export default function Preview() {
         source.disconnect();
       }
     };
-  }, [playing, rev, total, setPlaying, setTime]);
+  }, [playing, rev, total, playUntil, setPlaying, setTime]);
 
   const currentSlide = slideAt(timing, time);
 

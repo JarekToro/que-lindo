@@ -231,6 +231,7 @@ export default function Timeline({
   const setMode = useEditor((s) => s.setMode);
   const mode = face ?? storeMode;
   const timing = useEditor((s) => s.timing);
+  const playSlide = useEditor((s) => s.playSlide);
   const time = useEditor((s) => s.time);
   const setTime = useEditor((s) => s.setTime);
   const playing = useEditor((s) => s.playing);
@@ -702,6 +703,7 @@ export default function Timeline({
         entries.push({ label: `Split into ${membersOf(s).length} slides`, onPick: () => splitApart(i) });
         entries.push("sep");
       }
+      entries.push({ label: "Play this slide", onPick: () => playSlide(i) });
       entries.push({ label: "Add title on this slide", onPick: () => addTitle(i) });
       entries.push({ label: "Duplicate", onPick: () => duplicate(i) });
       entries.push({ label: "Add blank slide after", onPick: () => insertSlides(i + 1, [defaultSlide()]) });

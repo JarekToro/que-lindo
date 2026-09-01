@@ -1,6 +1,7 @@
 //! Tauri shell: thin command layer over slideshow-core. The frontend owns the
 //! project document; this side renders previews/exports and touches the disk.
 
+mod focus;
 mod preview;
 
 use anyhow::Context;
@@ -167,6 +168,15 @@ async fn probe_media(state: State<'_, AppState>, path: String) -> Result<Importe
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// The photo's focal point (face-weighted) as frame fractions, or null when
+/// nothing is detected — zoom defaults aim here.
+#[tauri::command]
+async fn detect_focus(path: String) -> Result<Option<[f32; 2]>, String> {
+    tauri::async_runtime::spawn_blocking(move || Ok(focus::detect_focus(Path::new(&path))))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Thumbnail as raw PNG bytes. `is_image`/`duration` come from a prior
@@ -452,6 +462,7 @@ pub fn run() {
             save_current_project,
             probe_media,
             media_thumb,
+            detect_focus,
             list_fonts,
             render_preview,
             render_audio_mix,

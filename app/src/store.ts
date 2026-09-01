@@ -80,6 +80,8 @@ export interface EditorState {
   media: MediaItem[];
   time: number;
   playing: boolean;
+  /** Playback stops at this time (auditioning one slide); null = play out. */
+  playUntil: number | null;
   /** Which face the timeline shows: space (arrange) or time. */
   mode: "arrange" | "time";
   /** Panel layout preferences (persisted per machine, not per project). */
@@ -103,10 +105,12 @@ export interface EditorState {
   selectText(index: number | null): void;
   beginImport(paths: string[]): void;
   finishImport(path: string, result: { info: MediaInfo } | { error: string }): void;
-  setThumb(path: string, thumb: string | null): void;
+  setThumb(path: string, thumb: string | null, focus?: [number, number] | null): void;
   removeMedia(path: string): void;
   setTime(t: number): void;
   setPlaying(playing: boolean): void;
+  /** Audition one slide: seek to its start and play just through its end. */
+  playSlide(index: number): void;
   setPath(path: string | null): void;
   markSaved(): void;
   undo(): void;
@@ -143,6 +147,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   media: [],
   time: 0,
   playing: false,
+  playUntil: null,
   mode: "arrange",
   ui: loadUiPrefs(),
   past: [],
@@ -251,12 +256,12 @@ export const useEditor = create<EditorState>((set, get) => ({
         if (m.path !== path || m.status !== "pending") return m;
         return "error" in result
           ? { status: "error", path, error: result.error }
-          : { status: "ready", path, info: result.info, thumb: null };
+          : { status: "ready", path, info: result.info, thumb: null, focus: null };
       }),
     });
   },
 
-  setThumb(path, thumb) {
+  setThumb(path, thumb, focus = null) {
     const item = get().media.find((m) => m.path === path);
     if (!item || item.status !== "ready") {
       // The item left the bin while its thumbnail rendered.
@@ -265,7 +270,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     }
     set({
       media: get().media.map((m): MediaItem =>
-        m.path === path && m.status === "ready" ? { ...m, thumb } : m,
+        m.path === path && m.status === "ready" ? { ...m, thumb, focus } : m,
       ),
     });
   },
@@ -282,7 +287,22 @@ export const useEditor = create<EditorState>((set, get) => ({
   },
 
   setPlaying(playing) {
-    set({ playing });
+    // Any ordinary play/pause ends a one-slide audition.
+    set({ playing, playUntil: null });
+  },
+
+  playSlide(index) {
+    const { timing, project } = get();
+    const clamped = Math.max(0, Math.min(index, project.slides.length - 1));
+    const span = timing?.spans[clamped];
+    if (!span) return;
+    set({
+      selectedSlide: clamped,
+      selectedIds: project.slides[clamped] ? [project.slides[clamped].id] : [],
+      time: span.start,
+      playing: true,
+      playUntil: span.end,
+    });
   },
 
   setPath(path) {

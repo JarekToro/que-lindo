@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { checkFfmpeg, loadProject, mediaThumb, onFileDrop, probeMedia, startupProject } from "./api";
+import { checkFfmpeg, detectFocus, loadProject, mediaThumb, onFileDrop, probeMedia, startupProject } from "./api";
 import ExportDialog from "./components/ExportDialog";
 import Inspector from "./components/Inspector";
 import Preview from "./components/Preview";
@@ -52,8 +52,10 @@ export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
         const probed = await probeMedia(path);
         useEditor.getState().finishImport(path, { info: probed.info });
         const thumb = await mediaThumb(probed);
-        useEditor.getState().setThumb(path, thumb);
-        done[slot] = { ...probed, thumb };
+        // Aim zoom defaults at faces; failures just mean a centered zoom.
+        const focus = probed.info.is_image ? await detectFocus(path).catch(() => null) : null;
+        useEditor.getState().setThumb(path, thumb, focus);
+        done[slot] = { ...probed, thumb, focus };
       } catch (e) {
         console.error("import failed", path, e);
         useEditor.getState().finishImport(path, { error: String(e) });

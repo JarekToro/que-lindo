@@ -153,9 +153,12 @@ export interface ProbedMedia {
   info: MediaInfo;
 }
 
-/** A probed file plus its thumbnail as an object URL (fetched separately). */
+/** A probed file plus its thumbnail (object URL) and detected focal point,
+ * both fetched separately after the probe. */
 export interface ImportedMedia extends ProbedMedia {
   thumb: string | null;
+  /** Face-weighted focal point as frame fractions; null = nothing found. */
+  focus: [number, number] | null;
 }
 
 /**
