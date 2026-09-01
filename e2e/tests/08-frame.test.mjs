@@ -83,7 +83,7 @@ suite.test("the ◎ aim handle appears for a selected zooming photo", async (app
 
 suite.test("preview frames come back as raw RGBA with a size header", async (app) => {
   const info = await app.evalJs(`(async () => {
-    const buf = await window.__TAURI_INTERNALS__.invoke("render_preview", { time: 1, scale: 0.5, revealTexts: false });
+    const buf = await window.__TAURI_INTERNALS__.invoke("render_preview", { time: 1, scale: 0.5, revealTexts: false, minRev: 0 });
     const v = new DataView(buf);
     const w = v.getUint32(0, true), h = v.getUint32(4, true);
     return { ok: buf.byteLength === 8 + w * h * 4, w, h };
@@ -96,10 +96,10 @@ suite.test("the frame cache answers repeats instantly", async (app) => {
   const times = await app.evalJs(`(async () => {
     const inv = window.__TAURI_INTERNALS__.invoke;
     const t0 = performance.now();
-    await inv("render_preview", { time: 2.75, scale: 0.5, revealTexts: false });
+    await inv("render_preview", { time: 2.75, scale: 0.5, revealTexts: false, minRev: 0 });
     const cold = performance.now() - t0;
     const t1 = performance.now();
-    await inv("render_preview", { time: 2.75, scale: 0.5, revealTexts: false });
+    await inv("render_preview", { time: 2.75, scale: 0.5, revealTexts: false, minRev: 0 });
     return { cold, warm: performance.now() - t1 };
   })()`);
   expect(times.warm).toBeLessThan(Math.max(times.cold, 20));

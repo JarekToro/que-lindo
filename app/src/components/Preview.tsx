@@ -43,7 +43,7 @@ export default function Preview() {
       ) {
         const target = { ...wanted.current };
         try {
-          const frame = await renderPreview(target.time, scale, target.reveal);
+          const frame = await renderPreview(target.time, scale, target.reveal, target.rev);
           const canvas = canvasRef.current;
           if (canvas) {
             if (canvas.width !== frame.width) canvas.width = frame.width;
