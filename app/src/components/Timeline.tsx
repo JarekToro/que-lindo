@@ -164,6 +164,8 @@ function SlideThumb({
               top: `${(r.y / H) * 100}%`,
               width: `${(r.w / W) * 100}%`,
               height: `${(r.h / H) * 100}%`,
+              transform: cell.rotation ? `rotate(${cell.rotation}deg)` : undefined,
+              border: cell.border ? "1px solid #fff" : undefined,
             }}
           >
             {thumb ? <img src={thumb} alt="" draggable={false} /> : <span className="thumb-empty" />}

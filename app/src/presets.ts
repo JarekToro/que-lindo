@@ -81,6 +81,7 @@ export function cellFor(media: ImportedMedia, index = 0): Cell {
     smart_focus: media.focusRect
       ? { x: media.focusRect[0], y: media.focusRect[1], w: media.focusRect[2], h: media.focusRect[3] }
       : null,
+    rotation: 0,
   };
 }
 
@@ -135,7 +136,7 @@ export function autoLayout(n: number): Layout {
  * identity, duration and transition. */
 export function bindSlides(target: Slide, source: Slide): Slide {
   const cells = [...target.cells, ...source.cells].map(
-    (c): Cell => ({ ...c, fit: "cover", motion: { type: "none" } }),
+    (c): Cell => ({ ...c, fit: "cover", motion: { type: "none" }, rotation: 0 }),
   );
   return {
     ...target,
@@ -178,6 +179,8 @@ export function slideForCell(cell: Cell, info?: MediaInfo): Slide {
         ...cell,
         fit: portrait ? "contain" : "cover",
         motion: isImage && !portrait ? autoMotion(0) : { type: "none" },
+        // A print lifted off a scatter pile lies flat again.
+        rotation: 0,
       },
     ],
   });

@@ -215,6 +215,19 @@ pub enum Layout {
         #[serde(default = "default_featured_ratio")]
         ratio: f32,
     },
+    /// Cell 0 is large in the center; remaining cells flank it on both sides.
+    Spotlight {
+        /// Fraction of the frame given to the center cell.
+        #[serde(default = "default_featured_ratio")]
+        ratio: f32,
+    },
+    /// Aspect-aware justified rows. `aspects` carries each cell's media
+    /// aspect ratio (w/h), written at edit time; missing entries fall back
+    /// to 3:2 so rendering never needs a probe.
+    Mosaic {
+        #[serde(default)]
+        aspects: Vec<f32>,
+    },
     /// Arbitrary normalized rectangles, one per cell.
     Custom {
         rects: Vec<NormRect>,
@@ -280,6 +293,9 @@ pub struct Cell {
     /// typically the padded union of detected faces, stored at edit time so
     /// rendering never needs the detector.
     pub smart_focus: Option<NormRect>,
+    /// Rotation in degrees about the cell's center. Scatter layouts write
+    /// it, but it is per-cell data so users can own it directly later.
+    pub rotation: f32,
 }
 
 impl Default for Cell {
@@ -291,6 +307,7 @@ impl Default for Cell {
             corner_radius: 0.0,
             border: None,
             smart_focus: None,
+            rotation: 0.0,
         }
     }
 }

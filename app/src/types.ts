@@ -35,6 +35,8 @@ export type Layout =
   | { type: "columns"; weights: number[] }
   | { type: "grid"; rows: number; cols: number }
   | { type: "featured"; side: Side; ratio: number }
+  | { type: "spotlight"; ratio: number }
+  | { type: "mosaic"; aspects: number[] }
   | { type: "custom"; rects: NormRect[] };
 
 export type SlideBackground =
@@ -67,6 +69,8 @@ export interface Cell {
   border: Border | null;
   /** Face region for smart fit (padded union of faces); null = center. */
   smart_focus: NormRect | null;
+  /** Rotation in degrees about the cell center (scatter layouts write it). */
+  rotation: number;
 }
 
 export type TextRole = "title" | "subtitle" | "caption" | "lower_third" | "credit";
