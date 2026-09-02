@@ -95,18 +95,13 @@ impl TextRenderer {
         let text_w = max_x - min_x;
         let text_h = max_y;
 
-        // Anchor the measured block within the frame. Horizontally the block
-        // hangs off the anchor point according to `align`: left-aligned text
-        // starts at the anchor, centered text straddles it, right-aligned
-        // text ends at it. (The shaper already justified the lines within
-        // the wrap width; this places the tight block itself.)
+        // Two independent layers, the way slide tools solve this: the text
+        // FRAME (wrap width wide) is placed on the canvas by the anchor
+        // region — its matching point sits on the region point, nudged by
+        // the offset — while `align` only justifies the lines inside the
+        // frame (the shaper already did that; glyph x is box-relative).
         let (ax, ay) = overlay.anchor.point();
-        let align_f = match overlay.align {
-            Align::Left => 0.0,
-            Align::Center => 0.5,
-            Align::Right => 1.0,
-        };
-        let origin_x = ax * frame_w - align_f * text_w + overlay.offset[0] * frame_w - min_x;
+        let origin_x = ax * frame_w - ax * wrap_w + overlay.offset[0] * frame_w;
         let origin_y = ay * frame_h - ay * text_h + overlay.offset[1] * frame_h;
 
         // Optional backing box.
@@ -255,10 +250,10 @@ mod tests {
         let left = centroid(Align::Left);
         let center = centroid(Align::Center);
         let right = centroid(Align::Right);
-        // Left-aligned text starts at the anchor (centroid right of center),
-        // right-aligned ends at it (centroid left of center).
-        assert!(left > center + 20.0, "left {left} vs center {center}");
-        assert!(right < center - 20.0, "right {right} vs center {center}");
+        // The frame stays put; align justifies the lines inside it: left
+        // pushes the text to the frame's left edge, right to its right.
+        assert!(left < center - 20.0, "left {left} vs center {center}");
+        assert!(right > center + 20.0, "right {right} vs center {center}");
         assert!((center - 320.0).abs() < 30.0, "center {center}");
     }
 
