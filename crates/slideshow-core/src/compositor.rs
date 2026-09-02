@@ -172,42 +172,50 @@ impl Renderer {
                 let sw = src.width() as f32;
                 let sh = src.height() as f32;
                 let win = cell.motion.window_at(progress).unwrap_or(NormRect::FULL);
-                // A zoom on a contained ("whole photo") cell scales the whole
-                // letterboxed box toward the frame instead of magnifying and
-                // cropping inside a fixed box — the photo stays whole until
-                // it outgrows its cell.
-                let zoom_whole = matches!(cell.fit, Fit::Contain)
-                    && matches!(cell.motion, Motion::Zoom { .. });
-                if zoom_whole {
-                    let z = (1.0 / win.w.max(0.01)).max(0.01);
+                // Motion on a contained ("whole photo") cell moves the whole
+                // letterboxed box — never a crop inside a fixed box. Zooms
+                // scale about the focus point; Ken Burns glides the box so
+                // the crop window's center tracks the cell center. Both are
+                // single continuous formulas, linear in the eased window.
+                let move_whole = matches!(cell.fit, Fit::Contain)
+                    && matches!(cell.motion, Motion::Zoom { .. } | Motion::KenBurns { .. });
+                if move_whole {
                     // The margin defines the RESTING composition (base scale
                     // fits the margined cell), but the motion isn't caged by
-                    // it: a lone photo may grow through the margin up to the
+                    // it: a lone photo may move through the margin up to the
                     // full frame. Group members still stop at their own cell.
                     let bound = if slide.cells.len() == 1 {
                         Rect::new(0.0, 0.0, pm.width() as f32, pm.height() as f32)
                     } else {
                         rect
                     };
-                    let origin = match &cell.motion {
-                        Motion::Zoom { origin, .. } => {
-                            [origin[0].clamp(0.0, 1.0), origin[1].clamp(0.0, 1.0)]
-                        }
-                        _ => [0.5, 0.5],
-                    };
-                    // Pure scale about a fixed point: the focus point keeps
-                    // its resting screen position and the photo grows around
-                    // it — one continuous, linear motion with no pan phase
-                    // and no kink when the box outgrows the cell.
                     let s0 = (rect.w / sw).min(rect.h / sh);
-                    let s = s0 * z;
-                    let (dw0, dh0) = (sw * s0, sh * s0);
-                    let p0x = rect.x + rect.w / 2.0 + (origin[0] - 0.5) * dw0;
-                    let p0y = rect.y + rect.h / 2.0 + (origin[1] - 0.5) * dh0;
+                    let s = s0 * (1.0 / win.w.max(0.01)).max(0.01);
                     let dw = sw * s;
                     let dh = sh * s;
-                    let dx = p0x - origin[0] * dw;
-                    let dy = p0y - origin[1] * dh;
+                    let (dx, dy) = match &cell.motion {
+                        Motion::Zoom { origin, .. } => {
+                            // Pure scale about a fixed point: the focus point
+                            // keeps its resting screen position and the photo
+                            // grows around it.
+                            let o = [origin[0].clamp(0.0, 1.0), origin[1].clamp(0.0, 1.0)];
+                            let (dw0, dh0) = (sw * s0, sh * s0);
+                            let p0x = rect.x + rect.w / 2.0 + (o[0] - 0.5) * dw0;
+                            let p0y = rect.y + rect.h / 2.0 + (o[1] - 0.5) * dh0;
+                            (p0x - o[0] * dw, p0y - o[1] * dh)
+                        }
+                        _ => {
+                            // Ken Burns: the window's center rides the cell
+                            // center, so a sliding window glides the whole
+                            // box and a shrinking window scales it.
+                            let cx = rect.x + rect.w / 2.0;
+                            let cy = rect.y + rect.h / 2.0;
+                            (
+                                cx - (win.x + win.w / 2.0) * sw * s,
+                                cy - (win.y + win.h / 2.0) * sh * s,
+                            )
+                        }
+                    };
                     let full = Rect::new(dx, dy, dw, dh);
                     // The visible box clips against the motion bound.
                     let cx0 = full.x.max(bound.x);
