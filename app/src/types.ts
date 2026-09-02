@@ -15,6 +15,8 @@ export interface Settings {
   height: number;
   fps: number;
   background: string; // #rrggbb[aa]
+  /** Title-safe margin: anchor regions inset from the frame edges. */
+  text_margin: number;
 }
 
 export type Side = "left" | "right" | "top" | "bottom";

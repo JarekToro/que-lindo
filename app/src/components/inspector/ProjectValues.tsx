@@ -63,6 +63,10 @@ export default function ProjectValues() {
           onChange={(fps) => mutate((p) => ({ ...p, settings: { ...p.settings, fps } }))} />
         <NumField label="Outro time" value={project.outro.duration} min={0} max={10} step={0.1} display="s"
           onChange={(duration) => mutate((p) => ({ ...p, outro: { ...p.outro, duration } }))} />
+        <SliderField label="Text margin" value={project.settings.text_margin} min={0} max={0.15} step={0.005} display="pct"
+          onChange={(text_margin) =>
+            mutate((p) => ({ ...p, settings: { ...p.settings, text_margin } }))
+          } />
         <ColorField label="Background" value={project.settings.background}
           onChange={(background) => mutate((p) => ({ ...p, settings: { ...p.settings, background } }))} />
       </VGroup>

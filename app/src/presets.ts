@@ -312,7 +312,7 @@ export function applyMemorialTheme(project: Project): Project {
 export function emptyProject(): Project {
   return {
     version: 1,
-    settings: { width: 1920, height: 1080, fps: 30, background: "#101014" },
+    settings: { width: 1920, height: 1080, fps: 30, background: "#101014", text_margin: 0.05 },
     slides: [titleCard("", "")],
     audio: [],
     outro: { kind: { type: "fade_black" }, duration: 1.5 },
