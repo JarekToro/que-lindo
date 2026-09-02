@@ -35,7 +35,9 @@ impl TextRenderer {
             .db()
             .faces()
             .map(|f| f.families.first().map(|(n, _)| n.clone()).unwrap_or_default())
-            .filter(|n| !n.is_empty())
+            // Dot-prefixed families are macOS-private UI fonts that neither
+            // list nor render meaningfully.
+            .filter(|n| !n.is_empty() && !n.starts_with('.'))
             .collect();
         names.sort();
         names.dedup();

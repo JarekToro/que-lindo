@@ -111,6 +111,15 @@ suite.test("changing text alignment moves the block against its anchor", async (
   expect(changed).toBeGreaterThan(5);
 });
 
+suite.test("a font change re-renders the title", async (app) => {
+  const changed = await framesDiffer(app, `(() => {
+    window.__editorStore.getState().mutate(p => ({ ...p, slides: p.slides.map((s, i) =>
+      i === 1 ? { ...s, texts: s.texts.map(t => ({ ...t, font: t.font === "Impact" ? "Courier New" : "Impact" })) } : s) }));
+    return true;
+  })()`);
+  expect(changed).toBeGreaterThan(5);
+});
+
 suite.test("Bigger grows the rendered text", async (app) => {
   const changed = await framesDiffer(app, `(() => {
     const btn = [...document.querySelectorAll(".verb-row button")].find(b => b.textContent === "Bigger");
