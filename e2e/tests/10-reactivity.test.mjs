@@ -102,6 +102,15 @@ suite.test("typing new text re-renders the overlay", async (app) => {
   expect(changed).toBeGreaterThan(10);
 });
 
+suite.test("changing text alignment moves the block against its anchor", async (app) => {
+  const changed = await framesDiffer(app, `(() => {
+    window.__editorStore.getState().mutate(p => ({ ...p, slides: p.slides.map((s, i) =>
+      i === 1 ? { ...s, texts: s.texts.map(t => ({ ...t, align: t.align === "right" ? "left" : "right" })) } : s) }));
+    return true;
+  })()`);
+  expect(changed).toBeGreaterThan(5);
+});
+
 suite.test("Bigger grows the rendered text", async (app) => {
   const changed = await framesDiffer(app, `(() => {
     const btn = [...document.querySelectorAll(".verb-row button")].find(b => b.textContent === "Bigger");
