@@ -189,31 +189,25 @@ impl Renderer {
                     } else {
                         rect
                     };
-                    let s = (rect.w / sw).min(rect.h / sh) * z;
-                    let dw = sw * s;
-                    let dh = sh * s;
                     let origin = match &cell.motion {
-                        Motion::Zoom { origin, .. } => *origin,
+                        Motion::Zoom { origin, .. } => {
+                            [origin[0].clamp(0.0, 1.0), origin[1].clamp(0.0, 1.0)]
+                        }
                         _ => [0.5, 0.5],
                     };
-                    // Fits the resting cell → centered there. Larger → pull
-                    // the focus point toward the cell center, clamped inside
-                    // the bound (which flips to overflow-cover past its size).
-                    let clamp_axis = |want: f32, b0: f32, blen: f32, dlen: f32| {
-                        let a = b0 + blen - dlen;
-                        let (lo, hi) = if a < b0 { (a, b0) } else { (b0, a) };
-                        want.clamp(lo, hi)
-                    };
-                    let dx = if dw <= rect.w {
-                        rect.x + (rect.w - dw) / 2.0
-                    } else {
-                        clamp_axis(rect.x + rect.w / 2.0 - origin[0] * dw, bound.x, bound.w, dw)
-                    };
-                    let dy = if dh <= rect.h {
-                        rect.y + (rect.h - dh) / 2.0
-                    } else {
-                        clamp_axis(rect.y + rect.h / 2.0 - origin[1] * dh, bound.y, bound.h, dh)
-                    };
+                    // Pure scale about a fixed point: the focus point keeps
+                    // its resting screen position and the photo grows around
+                    // it — one continuous, linear motion with no pan phase
+                    // and no kink when the box outgrows the cell.
+                    let s0 = (rect.w / sw).min(rect.h / sh);
+                    let s = s0 * z;
+                    let (dw0, dh0) = (sw * s0, sh * s0);
+                    let p0x = rect.x + rect.w / 2.0 + (origin[0] - 0.5) * dw0;
+                    let p0y = rect.y + rect.h / 2.0 + (origin[1] - 0.5) * dh0;
+                    let dw = sw * s;
+                    let dh = sh * s;
+                    let dx = p0x - origin[0] * dw;
+                    let dy = p0y - origin[1] * dh;
                     let full = Rect::new(dx, dy, dw, dh);
                     // The visible box clips against the motion bound.
                     let cx0 = full.x.max(bound.x);
