@@ -38,6 +38,7 @@ export function defaultText(partial: Partial<TextOverlay> = {}): TextOverlay {
     start: 0,
     end: null,
     fade: 0.35,
+    fade_out: null,
     ...partial,
   };
 }

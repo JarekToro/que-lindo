@@ -336,8 +336,12 @@ function TextValues({
       <VGroup label="Timing">
         <NumField label="Appear at" value={t.start} min={0} max={120} step={0.1} display="s"
           onChange={(start) => patch({ start })} />
-        <NumField label="Fade" value={t.fade} min={0} max={5} step={0.05} display="s"
+        <NumField label="Until" value={t.end ?? slide.duration} min={0} max={120} step={0.1} display="s"
+          onChange={(v) => patch({ end: v >= slide.duration - 0.01 ? null : Math.max(v, t.start + 0.1) })} />
+        <NumField label="Fade in" value={t.fade} min={0} max={5} step={0.05} display="s"
           onChange={(fade) => patch({ fade })} />
+        <NumField label="Fade out" value={t.fade_out ?? t.fade} min={0} max={5} step={0.05} display="s"
+          onChange={(fade_out) => patch({ fade_out })} />
       </VGroup>
     </>
   );
