@@ -253,6 +253,38 @@ export default function Preview() {
 
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
+  // ---- click a photo on the frame to select it in the inspector ----
+  const selectCell = useEditor((s) => s.selectCell);
+  const pickCell = (e: React.PointerEvent) => {
+    if (e.button !== 0 || playing || !shownSlide) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const r = canvas.getBoundingClientRect();
+    const fx = (e.clientX - r.left) / Math.max(r.width, 1);
+    const fy = (e.clientY - r.top) / Math.max(r.height, 1);
+    if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return;
+    const W = project.settings.width;
+    const H = Math.max(project.settings.height, 1);
+    const rects = layoutRects(
+      shownSlide.layout,
+      shownSlide.cells.length,
+      W,
+      H,
+      shownSlide.margin,
+      shownSlide.gutter,
+    );
+    // Last hit wins: cells render in array order, so the topmost one takes
+    // the click when custom rects overlap.
+    let hit = -1;
+    rects.forEach((rc, i) => {
+      if (fx >= rc.x / W && fx <= (rc.x + rc.w) / W && fy >= rc.y / H && fy <= (rc.y + rc.h) / H)
+        hit = i;
+    });
+    selectSlide(currentSlide, false);
+    selectText(null);
+    selectCell(hit >= 0 ? hit : null);
+  };
+
   // ---- zoom focus on the frame: aim where the zoom pushes into ----
   const selectedCellIdx = useEditor((s) => s.selectedCell);
   const zoomTarget = (() => {
@@ -319,7 +351,11 @@ export default function Preview() {
   return (
     <main className="preview">
       <div className="preview-stage" ref={stageRef}>
-        <div className="frame-wrap">
+        <div
+          className="frame-wrap"
+          onPointerDown={pickCell}
+          title={shownSlide && shownSlide.cells.length ? "Click a photo to select it" : undefined}
+        >
           <canvas ref={canvasRef} aria-label="preview" hidden={!hasFrame} />
           {hasFrame && !playing && shownSlide && (shownSlide.texts.length > 0 || zoomTarget) && (
             <div className="text-layer" ref={overlayRef}>
