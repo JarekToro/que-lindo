@@ -24,7 +24,7 @@ export interface UiPrefs {
 }
 
 const DEFAULT_UI: UiPrefs = {
-  dock: "bottom",
+  dock: "split",
   timelineSize: 260,
   inspectorWidth: 300,
   arrangeWidth: 340,
