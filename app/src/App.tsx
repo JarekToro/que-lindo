@@ -53,9 +53,11 @@ export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
         useEditor.getState().finishImport(path, { info: probed.info });
         const thumb = await mediaThumb(probed);
         // Aim zoom defaults at faces; failures just mean a centered zoom.
-        const focus = probed.info.is_image ? await detectFocus(path).catch(() => null) : null;
-        useEditor.getState().setThumb(path, thumb, focus);
-        done[slot] = { ...probed, thumb, focus };
+        const det = probed.info.is_image ? await detectFocus(path).catch(() => null) : null;
+        const focus = det?.point ?? null;
+        const focusRect = det?.region ?? null;
+        useEditor.getState().setThumb(path, thumb, focus, focusRect);
+        done[slot] = { ...probed, thumb, focus, focusRect };
       } catch (e) {
         console.error("import failed", path, e);
         useEditor.getState().finishImport(path, { error: String(e) });

@@ -47,7 +47,7 @@ export type MediaSource =
   | { type: "video"; path: string; start: number; mute: boolean }
   | { type: "solid"; color: string };
 
-export type Fit = "cover" | "contain";
+export type Fit = "cover" | "contain" | "smart";
 
 export type Motion =
   | { type: "none" }
@@ -65,6 +65,8 @@ export interface Cell {
   motion: Motion;
   corner_radius: number;
   border: Border | null;
+  /** Face region for smart fit (padded union of faces); null = center. */
+  smart_focus: NormRect | null;
 }
 
 export type TextRole = "title" | "subtitle" | "caption" | "lower_third" | "credit";
@@ -164,6 +166,8 @@ export interface ImportedMedia extends ProbedMedia {
   thumb: string | null;
   /** Face-weighted focal point as frame fractions; null = nothing found. */
   focus: [number, number] | null;
+  /** Padded union box of the faces [x, y, w, h]; null = nothing found. */
+  focusRect: [number, number, number, number] | null;
 }
 
 /**

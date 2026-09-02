@@ -105,7 +105,12 @@ export interface EditorState {
   selectText(index: number | null): void;
   beginImport(paths: string[]): void;
   finishImport(path: string, result: { info: MediaInfo } | { error: string }): void;
-  setThumb(path: string, thumb: string | null, focus?: [number, number] | null): void;
+  setThumb(
+    path: string,
+    thumb: string | null,
+    focus?: [number, number] | null,
+    focusRect?: [number, number, number, number] | null,
+  ): void;
   removeMedia(path: string): void;
   setTime(t: number): void;
   setPlaying(playing: boolean): void;
@@ -256,12 +261,12 @@ export const useEditor = create<EditorState>((set, get) => ({
         if (m.path !== path || m.status !== "pending") return m;
         return "error" in result
           ? { status: "error", path, error: result.error }
-          : { status: "ready", path, info: result.info, thumb: null, focus: null };
+          : { status: "ready", path, info: result.info, thumb: null, focus: null, focusRect: null };
       }),
     });
   },
 
-  setThumb(path, thumb, focus = null) {
+  setThumb(path, thumb, focus = null, focusRect = null) {
     const item = get().media.find((m) => m.path === path);
     if (!item || item.status !== "ready") {
       // The item left the bin while its thumbnail rendered.
@@ -270,7 +275,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     }
     set({
       media: get().media.map((m): MediaItem =>
-        m.path === path && m.status === "ready" ? { ...m, thumb, focus } : m,
+        m.path === path && m.status === "ready" ? { ...m, thumb, focus, focusRect } : m,
       ),
     });
   },

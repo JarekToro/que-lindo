@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { listFonts } from "../api";
+import { detectFocus, listFonts } from "../api";
 import { autoLayout, defaultText, lowerThird } from "../presets";
 import { useEditor } from "../store";
 import type { Cell, Layout, MediaItem, Slide, TextOverlay, TransitionKind } from "../types";
@@ -88,6 +88,33 @@ export default function Inspector() {
       active: motionLabel(slide.cells[ci].motion) === m.label,
       onPick: () => setMotion(ci, m.label),
     }));
+
+  // Smart fit needs a face region: reuse the cell's, then the bin's, then
+  // detect fresh (projects imported before face regions existed).
+  const pickSmart = (ci: number) => {
+    const cell = slide.cells[ci];
+    if (cell.smart_focus) {
+      patchCell(ci, { fit: "smart" });
+      return;
+    }
+    const path = cell.source.type !== "solid" ? cell.source.path : null;
+    const item = path ? thumbs.get(path) : undefined;
+    const rect = item?.status === "ready" ? item.focusRect : null;
+    if (rect) {
+      patchCell(ci, { fit: "smart", smart_focus: { x: rect[0], y: rect[1], w: rect[2], h: rect[3] } });
+      return;
+    }
+    patchCell(ci, { fit: "smart" });
+    if (path)
+      detectFocus(path)
+        .then((det) => {
+          if (det)
+            patchCell(ci, {
+              smart_focus: { x: det.region[0], y: det.region[1], w: det.region[2], h: det.region[3] },
+            });
+        })
+        .catch(() => undefined);
+  };
 
   const focusText = selectedText !== null ? slide.texts[selectedText] : undefined;
   const focusCell = selectedCell !== null ? slide.cells[selectedCell] : undefined;
@@ -178,6 +205,7 @@ export default function Inspector() {
             options={[
               { label: "Fill", active: focusCell.fit === "cover", onPick: () => patchCell(selectedCell!, { fit: "cover" }) },
               { label: "Whole photo", active: focusCell.fit === "contain", onPick: () => patchCell(selectedCell!, { fit: "contain" }) },
+              { label: "Smart", active: focusCell.fit === "smart", onPick: () => pickSmart(selectedCell!) },
             ]}
           />
         </>

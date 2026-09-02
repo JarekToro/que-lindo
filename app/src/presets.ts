@@ -77,6 +77,10 @@ export function cellFor(media: ImportedMedia, index = 0): Cell {
     motion: media.info.is_image ? autoMotion(index, media.focus) : { type: "none" },
     corner_radius: 0,
     border: null,
+    // Carried even on cover/contain so switching to Smart later needs no re-detect.
+    smart_focus: media.focusRect
+      ? { x: media.focusRect[0], y: media.focusRect[1], w: media.focusRect[2], h: media.focusRect[3] }
+      : null,
   };
 }
 

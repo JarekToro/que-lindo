@@ -25,10 +25,19 @@ fn build_detector() -> Option<Box<dyn Detector>> {
     Some(detector)
 }
 
-/// The photo's focal point as fractions of its frame, or None when no face
-/// is found (callers fall back to center). Multiple faces resolve to their
-/// size-weighted centroid — a group photo zooms toward the group.
-pub fn detect_focus(path: &Path) -> Option<[f32; 2]> {
+#[derive(Debug, serde::Serialize)]
+pub struct FocusInfo {
+    /// Size-weighted centroid of the faces, as frame fractions.
+    pub point: [f32; 2],
+    /// Padded union box of every face `[x, y, w, h]`, frame fractions —
+    /// what Smart fit keeps in frame.
+    pub region: [f32; 4],
+}
+
+/// The photo's faces, or None when nothing is found (callers fall back to
+/// center). Multiple faces resolve to a centroid and a group box — a group
+/// photo frames the group.
+pub fn detect_focus(path: &Path) -> Option<FocusInfo> {
     let img = image::open(path).ok()?;
     let (w0, h0) = (img.width().max(1), img.height().max(1));
     let scale = (480.0 / w0.max(h0) as f32).min(1.0);
@@ -51,20 +60,36 @@ pub fn detect_focus(path: &Path) -> Option<[f32; 2]> {
     let mut sum_w = 0.0f32;
     let mut fx = 0.0f32;
     let mut fy = 0.0f32;
+    let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, 0.0f32, 0.0f32);
     for face in &faces {
         let b = face.bbox();
-        let weight = (b.width() * b.height()) as f32;
-        let cx = b.x() as f32 + b.width() as f32 / 2.0;
-        let cy = b.y() as f32 + b.height() as f32 / 2.0;
-        fx += cx * weight;
-        fy += cy * weight;
+        let (bx, by) = (b.x() as f32, b.y() as f32);
+        let (bw, bh) = (b.width() as f32, b.height() as f32);
+        let weight = bw * bh;
+        fx += (bx + bw / 2.0) * weight;
+        fy += (by + bh / 2.0) * weight;
         sum_w += weight;
+        x0 = x0.min(bx);
+        y0 = y0.min(by);
+        x1 = x1.max(bx + bw);
+        y1 = y1.max(by + bh);
     }
     if sum_w <= 0.0 {
         return None;
     }
-    Some([
-        (fx / sum_w / gray.width() as f32).clamp(0.0, 1.0),
-        (fy / sum_w / gray.height() as f32).clamp(0.0, 1.0),
-    ])
+    let (gw, gh) = (gray.width() as f32, gray.height() as f32);
+    // Pad the union so foreheads and shoulders make the frame too.
+    let pad_x = (x1 - x0) * 0.3;
+    let pad_y = (y1 - y0) * 0.45;
+    let rx0 = ((x0 - pad_x) / gw).clamp(0.0, 1.0);
+    let ry0 = ((y0 - pad_y) / gh).clamp(0.0, 1.0);
+    let rx1 = ((x1 + pad_x) / gw).clamp(0.0, 1.0);
+    let ry1 = ((y1 + pad_y) / gh).clamp(0.0, 1.0);
+    Some(FocusInfo {
+        point: [
+            (fx / sum_w / gw).clamp(0.0, 1.0),
+            (fy / sum_w / gh).clamp(0.0, 1.0),
+        ],
+        region: [rx0, ry0, (rx1 - rx0).max(0.01), (ry1 - ry0).max(0.01)],
+    })
 }

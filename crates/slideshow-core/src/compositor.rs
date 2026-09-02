@@ -228,10 +228,29 @@ impl Renderer {
                         .post_translate(full.x + full.w / 2.0, full.y + full.h / 2.0);
                     (dest, Some(t), None)
                 } else {
-                    let crop =
+                    let mut crop =
                         Rect::new(win.x * sw, win.y * sh, (win.w * sw).max(1.0), (win.h * sh).max(1.0));
                     let (dest, s) = match cell.fit {
                         Fit::Cover => (rect, (rect.w / crop.w).max(rect.h / crop.h)),
+                        Fit::Smart => {
+                            // Fill like Cover, but slide the visible window
+                            // so the stored face region stays in frame —
+                            // centered on it when possible, clamped to the
+                            // motion window's bounds.
+                            let s = (rect.w / crop.w).max(rect.h / crop.h);
+                            let vw = rect.w / s;
+                            let vh = rect.h / s;
+                            let (fx, fy) = cell
+                                .smart_focus
+                                .map(|r| ((r.x + r.w / 2.0) * sw, (r.y + r.h / 2.0) * sh))
+                                .unwrap_or((crop.x + crop.w / 2.0, crop.y + crop.h / 2.0));
+                            let vx = (fx - vw / 2.0)
+                                .clamp(crop.x, (crop.x + crop.w - vw).max(crop.x));
+                            let vy = (fy - vh / 2.0)
+                                .clamp(crop.y, (crop.y + crop.h - vh).max(crop.y));
+                            crop = Rect::new(vx, vy, vw.max(1.0), vh.max(1.0));
+                            (rect, s)
+                        }
                         Fit::Contain => {
                             let s = (rect.w / crop.w).min(rect.h / crop.h);
                             let dw = crop.w * s;
