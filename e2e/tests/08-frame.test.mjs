@@ -135,3 +135,53 @@ suite.test("the frame cache answers repeats instantly", async (app) => {
   })()`);
   expect(times.warm).toBeLessThan(Math.max(times.cold, 20));
 });
+
+suite.test("smart fit shifts the fill crop toward the stored face region", async (app) => {
+  const diff = await app.evalJs(`(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const s = window.__editorStore.getState();
+    const setCell = (patch) => s.mutate(p => ({ ...p, slides: p.slides.map((sl, i) => i === 0
+      ? { ...sl, cells: sl.cells.map(c => ({ ...c, motion: { type: "none" }, ...patch })) } : sl) }));
+    const grab = () => {
+      const c = document.querySelector(".preview-stage canvas");
+      return c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    };
+    s.setTime(2.5);
+    setCell({ fit: "cover", smart_focus: null });
+    await wait(1100);
+    const cover = grab();
+    // A face box pinned to the top-left corner must drag the crop there.
+    setCell({ fit: "smart", smart_focus: { x: 0.0, y: 0.0, w: 0.2, h: 0.2 } });
+    await wait(1100);
+    const smart = grab();
+    let changed = 0;
+    for (let i = 0; i < cover.length; i += 64) if (Math.abs(cover[i] - smart[i]) > 12) changed++;
+    setCell({ fit: "cover", smart_focus: null });
+    return changed;
+  })()`, 20000);
+  expect(diff).toBeGreaterThan(50);
+});
+
+suite.test("smart fit with no stored region renders exactly like a centered fill", async (app) => {
+  const diff = await app.evalJs(`(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const s = window.__editorStore.getState();
+    const setFit = (fit) => s.mutate(p => ({ ...p, slides: p.slides.map((sl, i) => i === 0
+      ? { ...sl, cells: sl.cells.map(c => ({ ...c, motion: { type: "none" }, fit, smart_focus: null })) } : sl) }));
+    const grab = () => {
+      const c = document.querySelector(".preview-stage canvas");
+      return c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    };
+    s.setTime(2.5);
+    setFit("cover");
+    await wait(1100);
+    const cover = grab();
+    setFit("smart");
+    await wait(1100);
+    const smart = grab();
+    let changed = 0;
+    for (let i = 0; i < cover.length; i += 64) if (Math.abs(cover[i] - smart[i]) > 12) changed++;
+    return changed;
+  })()`, 20000);
+  expect(diff).toBeLessThan(20);
+});

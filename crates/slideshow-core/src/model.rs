@@ -276,6 +276,10 @@ pub struct Cell {
     /// Corner radius as a fraction of min(frame w, h).
     pub corner_radius: f32,
     pub border: Option<Border>,
+    /// Region of interest (normalized to the image) for `Fit::Smart` —
+    /// typically the padded union of detected faces, stored at edit time so
+    /// rendering never needs the detector.
+    pub smart_focus: Option<NormRect>,
 }
 
 impl Default for Cell {
@@ -286,6 +290,7 @@ impl Default for Cell {
             motion: Motion::None,
             corner_radius: 0.0,
             border: None,
+            smart_focus: None,
         }
     }
 }
@@ -330,11 +335,14 @@ fn default_true() -> bool {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Fit {
-    /// Fill the cell, cropping overflow.
+    /// Fill the cell, cropping overflow around the center.
     #[default]
     Cover,
     /// Letterbox inside the cell.
     Contain,
+    /// Fill the cell, but crop around the faces (`Cell::smart_focus`);
+    /// behaves like a centered Cover when no region is stored.
+    Smart,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

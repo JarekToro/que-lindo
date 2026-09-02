@@ -68,9 +68,12 @@ export const renderPreview = async (
 /** Backend answer for a queued frame request that a newer one replaced. */
 export const isSuperseded = (e: unknown): boolean => e === "superseded";
 
-/** Face-weighted focal point of a photo, or null when nothing is detected. */
+/** The photo's faces: weighted centroid + padded union region, or null. */
 export const detectFocus = (path: string) =>
-  invoke<[number, number] | null>("detect_focus", { path });
+  invoke<{ point: [number, number]; region: [number, number, number, number] } | null>(
+    "detect_focus",
+    { path },
+  );
 
 /** Sample rate / channel count of the backend's audio mix (aformat in the plan). */
 const MIX_SAMPLE_RATE = 48000;

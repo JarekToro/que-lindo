@@ -170,10 +170,11 @@ async fn probe_media(state: State<'_, AppState>, path: String) -> Result<Importe
     .map_err(|e| e.to_string())?
 }
 
-/// The photo's focal point (face-weighted) as frame fractions, or null when
-/// nothing is detected — zoom defaults aim here.
+/// The photo's faces (weighted centroid + padded union region) as frame
+/// fractions, or null when nothing is detected — zoom defaults aim at the
+/// point, Smart fit frames the region.
 #[tauri::command]
-async fn detect_focus(path: String) -> Result<Option<[f32; 2]>, String> {
+async fn detect_focus(path: String) -> Result<Option<focus::FocusInfo>, String> {
     tauri::async_runtime::spawn_blocking(move || Ok(focus::detect_focus(Path::new(&path))))
         .await
         .map_err(|e| e.to_string())?
