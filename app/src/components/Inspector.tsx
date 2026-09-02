@@ -102,9 +102,8 @@ export default function Inspector() {
 
   const addText = (kind: "title" | "caption" | "lower") => {
     if (kind === "lower") {
-      const name = prompt("Name:") ?? "Name";
-      const dates = prompt("Dates:") ?? "";
-      updateSlide(index, { texts: [...slide.texts, ...lowerThird(name, dates)] });
+      // Placeholders, not blocking prompts — edit in the panel after.
+      updateSlide(index, { texts: [...slide.texts, ...lowerThird("Name", "Dates")] });
       selectText(slide.texts.length);
       return;
     }

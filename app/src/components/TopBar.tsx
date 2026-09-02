@@ -1,4 +1,4 @@
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { ask, message, open, save } from "@tauri-apps/plugin-dialog";
 import { loadProject, saveProject } from "../api";
 import { importFiles, projectMediaPaths } from "../App";
 import { applyMemorialTheme, emptyProject, endCard, titleCard } from "../presets";
@@ -27,13 +27,21 @@ export default function TopBar({
   const mutate = useEditor((s) => s.mutate);
   const setPath = useEditor((s) => s.setPath);
   const markSaved = useEditor((s) => s.markSaved);
-  const doNew = () => {
-    if (dirty && !confirm("Discard unsaved changes?")) return;
+  const selectSlide = useEditor((s) => s.selectSlide);
+  const selectText = useEditor((s) => s.selectText);
+  // Native async dialog — window.confirm blocks the webview thread and is
+  // stubbed to "no" under the dev MCP bridge, which made Open look dead.
+  const confirmDiscard = async () =>
+    !dirty ||
+    (await ask("Discard unsaved changes?", { title: "Unsaved changes", kind: "warning" }));
+
+  const doNew = async () => {
+    if (!(await confirmDiscard())) return;
     replaceProject(emptyProject(), { path: null });
   };
 
   const doOpen = async () => {
-    if (dirty && !confirm("Discard unsaved changes?")) return;
+    if (!(await confirmDiscard())) return;
     const picked = await open({
       title: "Open project",
       filters: [{ name: "Slideshow project", extensions: ["json"] }],
@@ -44,7 +52,7 @@ export default function TopBar({
       replaceProject(p, { path: picked });
       void importFiles(projectMediaPaths(p));
     } catch (e) {
-      alert(`Could not open project:\n${e}`);
+      void message(`Could not open project:\n${e}`, { title: "Open failed", kind: "error" });
     }
   };
 
@@ -64,7 +72,7 @@ export default function TopBar({
       setPath(target);
       markSaved();
     } catch (e) {
-      alert(`Save failed:\n${e}`);
+      void message(`Save failed:\n${e}`, { title: "Save failed", kind: "error" });
     }
   };
 
@@ -102,9 +110,11 @@ export default function TopBar({
           <div className="menu-items">
             <button
               onClick={() => {
-                const name = prompt("Name (for the title card):") ?? "";
-                const dates = prompt("Dates (e.g. 1943 – 2026):") ?? "";
-                mutate((p) => ({ ...p, slides: [titleCard(name, dates), ...p.slides] }));
+                // Placeholders instead of blocking prompts: the card lands
+                // and its name opens in the panel ready to type.
+                mutate((p) => ({ ...p, slides: [titleCard("", ""), ...p.slides] }));
+                selectSlide(0);
+                selectText(1);
               }}
             >
               Add title card (start)
