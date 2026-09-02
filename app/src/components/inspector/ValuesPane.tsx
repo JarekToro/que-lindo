@@ -3,6 +3,7 @@
 // slide's canvas numbers; selecting a member (here or anywhere) swaps in that
 // member's fields.
 
+import { ANCHOR_POINTS } from "../../presets";
 import { useEditor } from "../../store";
 import type { Cell, Slide, TextOverlay } from "../../types";
 import { kindLabel, LAYOUTS } from "./data";
@@ -320,11 +321,39 @@ function TextValues({
         />
       </VGroup>
       <VGroup label="Placement">
-        <AnchorGrid value={t.anchor} onChange={(anchor) => patch({ anchor })} />
-        <NumField label="Offset X" value={t.offset[0]} min={-0.5} max={0.5} step={0.01} display="pct"
+        <AnchorGrid
+          value={t.anchor}
+          onChange={(anchor) => {
+            // Changing the anchor re-expresses the same position — the text
+            // stays put and the offsets become readable against the new
+            // reference point (one-line height estimate for the vertical).
+            const [ax1, ay1] = ANCHOR_POINTS[t.anchor] ?? [0.5, 0.5];
+            const [ax2, ay2] = ANCHOR_POINTS[anchor] ?? [0.5, 0.5];
+            const textH = Math.min(t.size * t.line_height, 0.5);
+            patch({
+              anchor,
+              offset: [
+                t.offset[0] + ax1 - ax2,
+                t.offset[1] + (ay1 - ay2) * (1 - textH),
+              ],
+            });
+          }}
+        />
+        <NumField label="Offset X" value={t.offset[0]} min={-1} max={1} step={0.01} display="pct"
           onChange={(v) => patch({ offset: [v, t.offset[1]] })} />
-        <NumField label="Offset Y" value={t.offset[1]} min={-0.5} max={0.5} step={0.01} display="pct"
+        <NumField label="Offset Y" value={t.offset[1]} min={-1} max={1} step={0.01} display="pct"
           onChange={(v) => patch({ offset: [t.offset[0], v] })} />
+        <div className="vrow">
+          <span className="vlabel" />
+          <button
+            className="ghost snap-btn"
+            title="Clear the offsets — the text jumps onto its anchor point"
+            onClick={() => patch({ offset: [0, 0] })}
+            disabled={t.offset[0] === 0 && t.offset[1] === 0}
+          >
+            Snap to anchor
+          </button>
+        </div>
       </VGroup>
       <VGroup label="Timing">
         <NumField label="Appear at" value={t.start} min={0} max={120} step={0.1} display="s"

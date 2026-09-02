@@ -171,6 +171,7 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 .font-item.on { background: var(--panel); border-color: var(--accent); color: var(--accent); }
 .font-item.on .font-sample { color: var(--accent); }
 
+.snap-btn { grid-column: 2 / -1; justify-self: start; font-size: 11px; }
 .color-field { grid-column: 2 / -1; display: inline-flex; align-items: center; gap: 8px; }
 .color-field .hex { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 
