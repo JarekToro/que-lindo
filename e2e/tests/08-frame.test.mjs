@@ -96,9 +96,10 @@ suite.test("zooming a whole-photo (contain) cell grows the box, not a crop insid
     const grown = photoArea();
     return { small, grown };
   })()`, 20000);
-  // The old behavior kept the letterbox constant (ratio 1.0); the box must
-  // grow — capped by the cell bounds it clips against once it outgrows them.
-  expect(areas.grown).toBeGreaterThan(areas.small * 1.15);
+  // The letterbox must grow with the zoom (constant = the old bug), and the
+  // slide margin must not cage it: a lone photo grows through the margin
+  // toward the frame (margin-clipped growth measured only ~1.23×).
+  expect(areas.grown).toBeGreaterThan(areas.small * 1.4);
 });
 
 suite.test("the ◎ aim handle appears for a selected zooming photo", async (app) => {

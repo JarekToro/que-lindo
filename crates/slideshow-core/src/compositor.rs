@@ -180,6 +180,15 @@ impl Renderer {
                     && matches!(cell.motion, Motion::Zoom { .. });
                 if zoom_whole {
                     let z = (1.0 / win.w.max(0.01)).max(0.01);
+                    // The margin defines the RESTING composition (base scale
+                    // fits the margined cell), but the motion isn't caged by
+                    // it: a lone photo may grow through the margin up to the
+                    // full frame. Group members still stop at their own cell.
+                    let bound = if slide.cells.len() == 1 {
+                        Rect::new(0.0, 0.0, pm.width() as f32, pm.height() as f32)
+                    } else {
+                        rect
+                    };
                     let s = (rect.w / sw).min(rect.h / sh) * z;
                     let dw = sw * s;
                     let dh = sh * s;
@@ -187,26 +196,30 @@ impl Renderer {
                         Motion::Zoom { origin, .. } => *origin,
                         _ => [0.5, 0.5],
                     };
-                    // Fits → centered. Overflowing → pull the focus point
-                    // toward the cell center, never exposing a gap.
+                    // Fits the resting cell → centered there. Larger → pull
+                    // the focus point toward the cell center, clamped inside
+                    // the bound (which flips to overflow-cover past its size).
+                    let clamp_axis = |want: f32, b0: f32, blen: f32, dlen: f32| {
+                        let a = b0 + blen - dlen;
+                        let (lo, hi) = if a < b0 { (a, b0) } else { (b0, a) };
+                        want.clamp(lo, hi)
+                    };
                     let dx = if dw <= rect.w {
                         rect.x + (rect.w - dw) / 2.0
                     } else {
-                        (rect.x + rect.w / 2.0 - origin[0] * dw)
-                            .clamp(rect.x + rect.w - dw, rect.x)
+                        clamp_axis(rect.x + rect.w / 2.0 - origin[0] * dw, bound.x, bound.w, dw)
                     };
                     let dy = if dh <= rect.h {
                         rect.y + (rect.h - dh) / 2.0
                     } else {
-                        (rect.y + rect.h / 2.0 - origin[1] * dh)
-                            .clamp(rect.y + rect.h - dh, rect.y)
+                        clamp_axis(rect.y + rect.h / 2.0 - origin[1] * dh, bound.y, bound.h, dh)
                     };
                     let full = Rect::new(dx, dy, dw, dh);
-                    // The visible box clips against the cell.
-                    let cx0 = full.x.max(rect.x);
-                    let cy0 = full.y.max(rect.y);
-                    let cx1 = (full.x + full.w).min(rect.x + rect.w);
-                    let cy1 = (full.y + full.h).min(rect.y + rect.h);
+                    // The visible box clips against the motion bound.
+                    let cx0 = full.x.max(bound.x);
+                    let cy0 = full.y.max(bound.y);
+                    let cx1 = (full.x + full.w).min(bound.x + bound.w);
+                    let cy1 = (full.y + full.h).min(bound.y + bound.h);
                     let dest = Rect::new(cx0, cy0, (cx1 - cx0).max(1.0), (cy1 - cy0).max(1.0));
                     let t = Transform::from_translate(-sw / 2.0, -sh / 2.0)
                         .post_scale(s, s)
