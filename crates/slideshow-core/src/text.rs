@@ -93,9 +93,18 @@ impl TextRenderer {
         let text_w = max_x - min_x;
         let text_h = max_y;
 
-        // Anchor the measured block within the frame.
+        // Anchor the measured block within the frame. Horizontally the block
+        // hangs off the anchor point according to `align`: left-aligned text
+        // starts at the anchor, centered text straddles it, right-aligned
+        // text ends at it. (The shaper already justified the lines within
+        // the wrap width; this places the tight block itself.)
         let (ax, ay) = overlay.anchor.point();
-        let origin_x = ax * frame_w - ax * text_w + overlay.offset[0] * frame_w - min_x;
+        let align_f = match overlay.align {
+            Align::Left => 0.0,
+            Align::Center => 0.5,
+            Align::Right => 1.0,
+        };
+        let origin_x = ax * frame_w - align_f * text_w + overlay.offset[0] * frame_w - min_x;
         let origin_y = ay * frame_h - ay * text_h + overlay.offset[1] * frame_h;
 
         // Optional backing box.
@@ -215,6 +224,40 @@ mod tests {
         tr.draw_overlay(&mut pm, &overlay, 1.0);
         let lit = pm.data().chunks(4).filter(|p| p[3] > 0).count();
         assert!(lit > 500, "expected text pixels, got {lit}");
+    }
+
+    #[test]
+    fn align_places_the_block_against_the_anchor() {
+        use crate::model::{Align, Anchor};
+        let mut tr = TextRenderer::new();
+        let mut centroid = |align: Align| {
+            let mut pm = Pixmap::new(640, 360).unwrap();
+            let overlay = TextOverlay {
+                text: "Names".into(),
+                size: 0.1,
+                anchor: Anchor::Center,
+                align,
+                shadow: false,
+                ..Default::default()
+            };
+            tr.draw_overlay(&mut pm, &overlay, 1.0);
+            let (mut sum, mut n) = (0f64, 0f64);
+            for (i, px) in pm.data().chunks(4).enumerate() {
+                if px[3] > 0 {
+                    sum += (i % 640) as f64;
+                    n += 1.0;
+                }
+            }
+            sum / n.max(1.0)
+        };
+        let left = centroid(Align::Left);
+        let center = centroid(Align::Center);
+        let right = centroid(Align::Right);
+        // Left-aligned text starts at the anchor (centroid right of center),
+        // right-aligned ends at it (centroid left of center).
+        assert!(left > center + 20.0, "left {left} vs center {center}");
+        assert!(right < center - 20.0, "right {right} vs center {center}");
+        assert!((center - 320.0).abs() < 30.0, "center {center}");
     }
 
     #[test]

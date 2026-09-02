@@ -182,6 +182,7 @@ function SlideThumb({
       {slide.texts.slice(0, 3).map((t, i) => {
         if (!t.text.trim()) return null;
         const [ax, ay] = ANCHOR_POINTS[t.anchor] ?? [0.5, 0.5];
+        const alignF = t.align === "left" ? 0 : t.align === "right" ? 1 : 0.5;
         const fx = Math.min(Math.max(ax + t.offset[0], 0), 1);
         const fy = Math.min(Math.max(ay + t.offset[1], 0), 1);
         return (
@@ -191,7 +192,7 @@ function SlideThumb({
             style={{
               left: `${fx * 100}%`,
               top: `${fy * 100}%`,
-              transform: `translate(${-ax * 100}%, ${-ay * 100}%)`,
+              transform: `translate(${-alignF * 100}%, ${-ay * 100}%)`,
               fontSize: `${Math.max(t.size * 100, 7)}cqh`,
               fontWeight: t.weight >= 600 ? 700 : 400,
               fontStyle: t.italic ? "italic" : "normal",
