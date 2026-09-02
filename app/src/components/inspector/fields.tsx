@@ -56,7 +56,8 @@ export function NumField({
   );
 }
 
-/** Slider with a typeable mono readout — for fields whose range is known. */
+/** Slider with a typeable mono readout — for fields whose range is known.
+ * `typeMax` lets the typed value exceed the slider's comfortable range. */
 export function SliderField({
   label,
   value,
@@ -65,6 +66,7 @@ export function SliderField({
   max,
   step,
   display = "raw",
+  typeMax,
 }: {
   label: string;
   value: number;
@@ -73,6 +75,7 @@ export function SliderField({
   max: number;
   step: number;
   display?: NumDisplay;
+  typeMax?: number;
 }) {
   return (
     <div className="vrow">
@@ -92,7 +95,7 @@ export function SliderField({
           onChange={(e) => {
             const n = parseFloat(e.target.value);
             if (!Number.isNaN(n))
-              onChange(Math.max(min, Math.min(max, fromShown(n, display))));
+              onChange(Math.max(min, Math.min(typeMax ?? max, fromShown(n, display))));
           }}
         />
         {UNIT[display] && <span className="unit">{UNIT[display]}</span>}
@@ -201,6 +204,28 @@ export function AnchorGrid({
           />
         ))}
       </span>
+    </div>
+  );
+}
+
+/** A row of style-pick buttons — for choices that have no natural number. */
+export function Verbs({
+  label,
+  options,
+}: {
+  label: string;
+  options: { label: string; active: boolean; onPick: () => void }[];
+}) {
+  return (
+    <div className="verb-group" role="group" aria-label={label}>
+      <span className="verb-label">{label}</span>
+      <div className="verb-row">
+        {options.map((o) => (
+          <button key={o.label} className={o.active ? "on" : ""} onClick={o.onPick}>
+            {o.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
