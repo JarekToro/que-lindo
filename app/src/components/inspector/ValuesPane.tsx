@@ -4,11 +4,12 @@
 
 import { useState } from "react";
 import { detectFocus } from "../../api";
-import { autoLayout, defaultText, lowerThird } from "../../presets";
+import { defaultText, lowerThird } from "../../presets";
 import { useEditor } from "../../store";
-import type { Cell, Layout, Slide, TextOverlay, TransitionKind } from "../../types";
-import { kindLabel, LAYOUTS, MOTIONS, motionLabel } from "./data";
+import type { Cell, Slide, TextOverlay, TransitionKind } from "../../types";
+import { kindLabel, MOTIONS, motionLabel } from "./data";
 import FontPicker from "./FontPicker";
+import LayoutPicker from "./LayoutPicker";
 import {
   AnchorGrid,
   ColorField,
@@ -128,19 +129,6 @@ export function SlideValues({ slide, index }: { slide: Slide; index: number }) {
   const bg = slide.background;
   const isLast = index === project.slides.length - 1;
 
-  const layoutOptions: { label: string; make: () => Layout }[] = [
-    { label: "Auto", make: () => autoLayout(slide.cells.length) },
-    ...LAYOUTS.filter((l) => l.label !== "Single").map((l) => ({
-      label: l.label,
-      make: () => l.make(slide.cells.length),
-    })),
-  ];
-  // First match wins: Auto often produces the same layout as a named option,
-  // and two lit buttons would claim two truths.
-  const layoutActive = layoutOptions.findIndex(
-    (l) => JSON.stringify(l.make()) === JSON.stringify(slide.layout),
-  );
-
   const setKind = (k: TransitionKind) =>
     updateSlide(index, { transition: { ...slide.transition, kind: k } });
   const kindVerbs: { label: string; active: boolean; kind: TransitionKind }[] = [
@@ -162,19 +150,7 @@ export function SlideValues({ slide, index }: { slide: Slide; index: number }) {
           onChange={(v) => updateSlide(index, { duration: Math.max(0.5, v) })} />
       </VGroup>
       <VGroup label="Arrangement">
-        {slide.cells.length > 1 && (
-          <Verbs
-            label="Layout"
-            options={layoutOptions.map((l, i) => ({
-              label: l.label,
-              active: i === layoutActive,
-              onPick: () => updateSlide(index, { layout: l.make() }),
-            }))}
-          />
-        )}
-        {slide.cells.length > 1 && layoutActive < 0 && (
-          <EchoRow label="Layout" value={`Custom (${slide.layout.type})`} />
-        )}
+        {slide.cells.length > 1 && <LayoutPicker slide={slide} index={index} />}
         <SliderField label="Margin" value={slide.margin} min={0} max={0.2} step={0.01} display="pct"
           onChange={(v) => updateSlide(index, { margin: v })} />
         <SliderField label="Gutter" value={slide.gutter} min={0} max={0.1} step={0.005} display="pct"

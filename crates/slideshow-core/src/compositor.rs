@@ -280,6 +280,14 @@ impl Renderer {
             return;
         };
 
+        // Rotation spins the finished cell — image, corners, and border
+        // together — about the cell's center, so overlap and tilt compose.
+        let canvas = if cell.rotation.abs() > 0.01 {
+            Transform::from_rotate_at(cell.rotation, rect.x + rect.w / 2.0, rect.y + rect.h / 2.0)
+        } else {
+            Transform::identity()
+        };
+
         let mut paint = Paint::default();
         paint.anti_alias = true;
         match (solid, &src, transform) {
@@ -297,7 +305,7 @@ impl Renderer {
             }
             _ => return,
         }
-        pm.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
+        pm.fill_path(&path, &paint, FillRule::Winding, canvas, None);
 
         if let Some(border) = &cell.border {
             let bw = (border.width.max(0.0) * min_dim).max(0.5);
@@ -305,7 +313,7 @@ impl Renderer {
             bp.anti_alias = true;
             bp.set_color_rgba8(border.color.r, border.color.g, border.color.b, border.color.a);
             let stroke = Stroke { width: bw, ..Stroke::default() };
-            pm.stroke_path(&path, &bp, &stroke, Transform::identity(), None);
+            pm.stroke_path(&path, &bp, &stroke, canvas, None);
         }
     }
 }

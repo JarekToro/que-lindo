@@ -191,6 +191,22 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   color: var(--muted); font-size: 13px;
 }
 .member-strip .menu-items { left: 0; right: auto; }
+
+/* The layout picker: mini-diagrams drawn from the real layout math. */
+.layout-picker { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.layout-tile {
+  position: relative; width: 56px; height: 32px; padding: 0; flex-shrink: 0;
+  background: #000; border: 1px solid var(--line); border-radius: 4px;
+  overflow: hidden; display: inline-block; cursor: pointer;
+  transition: border-color 120ms ease-out, box-shadow 120ms ease-out;
+}
+.layout-tile:hover { border-color: var(--accent); }
+.layout-tile.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.lt-cell {
+  position: absolute; background: var(--line); pointer-events: none;
+}
+.layout-tile.on .lt-cell { background: var(--accent); opacity: 0.75; }
+.lt-cell.dashed { background: transparent; border: 1px dashed var(--accent); }
 .member-chip {
   position: relative; flex-shrink: 0; border: 2px solid transparent; border-radius: 6px;
 }

@@ -41,6 +41,8 @@ pub fn layout_rects(
         Layout::Columns { weights } => split(area, n_cells, weights, g, true),
         Layout::Grid { rows, cols } => grid(area, n_cells, *rows as usize, *cols as usize, g),
         Layout::Featured { side, ratio } => featured(area, n_cells, *side, *ratio, g),
+        Layout::Spotlight { ratio } => spotlight(area, n_cells, *ratio, g),
+        Layout::Mosaic { aspects } => mosaic(area, n_cells, aspects, g),
         Layout::Custom { rects } => rects
             .iter()
             .take(n_cells)
@@ -135,6 +137,102 @@ fn featured(area: Rect, n: usize, side: Side, ratio: f32, gutter: f32) -> Vec<Re
     out
 }
 
+/// Cell 0 large in the center; the rest flank it left and right (extras go
+/// right). Keep the math in lockstep with `spotlight` in app/src/layout.ts.
+fn spotlight(area: Rect, n: usize, ratio: f32, gutter: f32) -> Vec<Rect> {
+    if n == 1 {
+        return vec![area];
+    }
+    let ratio = ratio.clamp(0.2, 0.8);
+    let left_n = (n - 1) / 2;
+    let right_n = n - 1 - left_n;
+    let cols = 1 + usize::from(left_n > 0) + usize::from(right_n > 0);
+    let avail = area.w - gutter * (cols as f32 - 1.0);
+    let main_w = avail * ratio;
+    let flank_w = (avail - main_w) / ((cols - 1) as f32);
+    let left_w = if left_n > 0 { flank_w } else { 0.0 };
+    let main_x = area.x + if left_n > 0 { left_w + gutter } else { 0.0 };
+
+    let mut out = vec![Rect::new(main_x, area.y, main_w, area.h)];
+    if left_n > 0 {
+        let col = Rect::new(area.x, area.y, left_w, area.h);
+        out.extend(split(col, left_n, &[], gutter, false));
+    }
+    if right_n > 0 {
+        let col = Rect::new(main_x + main_w + gutter, area.y, flank_w, area.h);
+        out.extend(split(col, right_n, &[], gutter, false));
+    }
+    out
+}
+
+/// Aspect-aware justified rows, deterministic in member order. Keep the
+/// math in lockstep with `mosaic` in app/src/layout.ts.
+fn mosaic(area: Rect, n: usize, aspects: &[f32], gutter: f32) -> Vec<Rect> {
+    if n == 1 {
+        return vec![area];
+    }
+    let a: Vec<f32> = (0..n)
+        .map(|i| aspects.get(i).copied().filter(|v| *v > 0.0).unwrap_or(1.5))
+        .collect();
+    let total: f32 = a.iter().sum();
+    let avg = total / n as f32;
+    let rows_f = (n as f32 * (area.h / area.w.max(1.0)) * avg).sqrt();
+    let rows = (rows_f.round() as usize).clamp(1, n);
+
+    // Contiguous partition: rows fill toward the average aspect-sum, always
+    // leaving at least one cell for every later row.
+    let target = total / rows as f32;
+    let mut row_cells: Vec<usize> = Vec::with_capacity(rows);
+    let mut i = 0usize;
+    for k in 0..rows {
+        let rows_left = rows - k;
+        let max_take = n - i - (rows_left - 1);
+        let mut acc = 0.0;
+        let mut take = 0usize;
+        while take < max_take && (take == 0 || acc + a[i + take] / 2.0 <= target) {
+            acc += a[i + take];
+            take += 1;
+        }
+        row_cells.push(take);
+        i += take;
+    }
+    if i < n {
+        *row_cells.last_mut().unwrap() += n - i;
+    }
+
+    // Justify: each row's natural height fits its aspect-sum to the full
+    // width, then all rows scale together to fill the area's height.
+    let sums: Vec<f32> = {
+        let mut out = Vec::with_capacity(rows);
+        let mut c = 0usize;
+        for cnt in &row_cells {
+            out.push(a[c..c + cnt].iter().sum::<f32>().max(0.01));
+            c += cnt;
+        }
+        out
+    };
+    let raw: Vec<f32> = sums.iter().map(|s| area.w / s).collect();
+    let raw_total: f32 = raw.iter().sum();
+    let scale = (area.h - gutter * (rows as f32 - 1.0)).max(1.0) / raw_total.max(0.01);
+
+    let mut out = Vec::with_capacity(n);
+    let mut y = area.y;
+    let mut c = 0usize;
+    for (k, cnt) in row_cells.iter().enumerate() {
+        let h = raw[k] * scale;
+        let avail = area.w - gutter * (*cnt as f32 - 1.0);
+        let mut x = area.x;
+        for j in 0..*cnt {
+            let w = avail * a[c + j] / sums[k];
+            out.push(Rect::new(x, y, w, h));
+            x += w + gutter;
+        }
+        c += cnt;
+        y += h + gutter;
+    }
+    out
+}
+
 /// Normalized rects for UI layout pickers / thumbnails.
 pub fn layout_preview(layout: &Layout, n_cells: usize) -> Vec<NormRect> {
     layout_rects(layout, n_cells, 1.0, 1.0, 0.0, 0.02)
@@ -213,6 +311,57 @@ mod tests {
         approx(r[1].x, 660.0);
         approx(r[1].h, 300.0);
         approx(r[2].y, 300.0);
+    }
+
+    #[test]
+    fn spotlight_center_hero() {
+        let r = layout_rects(&Layout::Spotlight { ratio: 0.5 }, 5, 1000.0, 500.0, 0.0, 0.0);
+        assert_eq!(r.len(), 5);
+        // Center hero spans the middle half; two flanks each split the rest.
+        approx(r[0].w, 500.0);
+        approx(r[0].x, 250.0);
+        // Left flank: 2 cells stacked.
+        approx(r[1].x, 0.0);
+        approx(r[1].h, 250.0);
+        // Right flank: 2 cells stacked.
+        approx(r[3].x, 750.0);
+        // Everything inside the frame.
+        for rect in &r {
+            assert!(rect.x >= -0.01 && rect.x + rect.w <= 1000.01);
+        }
+    }
+
+    #[test]
+    fn spotlight_two_cells_has_one_flank() {
+        let r = layout_rects(&Layout::Spotlight { ratio: 0.6 }, 2, 1000.0, 500.0, 0.0, 0.0);
+        assert_eq!(r.len(), 2);
+        approx(r[0].x, 0.0); // No left flank: hero starts at the edge.
+        approx(r[0].w, 600.0);
+        approx(r[1].x, 600.0);
+        approx(r[1].w, 400.0);
+    }
+
+    #[test]
+    fn mosaic_fills_area_in_order() {
+        let aspects = vec![1.5, 0.7, 1.5, 1.5, 0.7, 1.5];
+        let r = layout_rects(&Layout::Mosaic { aspects }, 6, 1600.0, 900.0, 0.0, 0.0);
+        assert_eq!(r.len(), 6);
+        // Rows tile the full height and each row tiles the full width.
+        let bottom = r.iter().map(|c| c.y + c.h).fold(0.0f32, f32::max);
+        approx(bottom, 900.0);
+        let right = r.iter().map(|c| c.x + c.w).fold(0.0f32, f32::max);
+        approx(right, 1600.0);
+        // Portrait aspects get narrower slots than landscape neighbors.
+        assert!(r[1].w < r[0].w);
+    }
+
+    #[test]
+    fn mosaic_defaults_missing_aspects() {
+        let r = layout_rects(&Layout::Mosaic { aspects: vec![] }, 4, 1600.0, 900.0, 0.0, 0.02);
+        assert_eq!(r.len(), 4);
+        for rect in &r {
+            assert!(rect.w > 1.0 && rect.h > 1.0);
+        }
     }
 
     #[test]
