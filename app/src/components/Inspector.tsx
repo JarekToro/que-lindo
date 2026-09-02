@@ -92,26 +92,7 @@ export default function Inspector() {
     updateSlide(index, { transition: { ...slide.transition, kind } });
   const setMotion = (ci: number, label: string) => {
     const m = MOTIONS.find((m) => m.label === label);
-    if (!m) return;
-    const cell = slide.cells[ci];
-    patchCell(ci, { motion: m.value(cell) });
-    // A fresh zoom on a cell with no face region yet: detect one so the
-    // zoom aims at the faces (media imported before regions existed).
-    if (
-      label.startsWith("Zoom") &&
-      cell.motion.type !== "zoom" &&
-      !cell.smart_focus &&
-      cell.source.type !== "solid"
-    )
-      detectFocus(cell.source.path)
-        .then((det) => {
-          if (det)
-            patchCellLater(ci, (c) => ({
-              smart_focus: { x: det.region[0], y: det.region[1], w: det.region[2], h: det.region[3] },
-              motion: c.motion.type === "zoom" ? { ...c.motion, origin: det.point } : c.motion,
-            }));
-        })
-        .catch(() => undefined);
+    if (m) patchCell(ci, { motion: m.value(slide.cells[ci]) });
   };
   const motionVerbs = (ci: number) =>
     MOTIONS.map((m) => ({

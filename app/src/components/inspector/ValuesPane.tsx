@@ -3,6 +3,8 @@
 // slide's canvas numbers; selecting a member (here or anywhere) swaps in that
 // member's fields.
 
+import { useState } from "react";
+import { detectFocus } from "../../api";
 import { useEditor } from "../../store";
 import type { Cell, Slide, TextOverlay } from "../../types";
 import { kindLabel, LAYOUTS } from "./data";
@@ -188,10 +190,52 @@ function SlideValues({ slide, index }: { slide: Slide; index: number }) {
 
 function CellValues({ slide, index, ci }: { slide: Slide; index: number; ci: number }) {
   const updateSlide = useEditor((s) => s.updateSlide);
+  const [aiming, setAiming] = useState(false);
   const cell = slide.cells[ci];
   if (!cell) return null;
   const patch = (p: Partial<Cell>) =>
     updateSlide(index, { cells: slide.cells.map((c, i) => (i === ci ? { ...c, ...p } : c)) });
+
+  // Detect faces and aim the zoom at them; also store the region so Smart
+  // fit can reuse it. Patches against the store's current state — the
+  // detection lands after this render's `slide` has gone stale.
+  const autoFocus = async () => {
+    if (cell.source.type === "solid" || aiming) return;
+    setAiming(true);
+    try {
+      const det = await detectFocus(cell.source.path);
+      if (det)
+        useEditor.getState().mutate((p) => ({
+          ...p,
+          slides: p.slides.map((sl, i) =>
+            i === index
+              ? {
+                  ...sl,
+                  cells: sl.cells.map((c, j) =>
+                    j === ci
+                      ? {
+                          ...c,
+                          smart_focus: {
+                            x: det.region[0],
+                            y: det.region[1],
+                            w: det.region[2],
+                            h: det.region[3],
+                          },
+                          motion:
+                            c.motion.type === "zoom" ? { ...c.motion, origin: det.point } : c.motion,
+                        }
+                      : c,
+                  ),
+                }
+              : sl,
+          ),
+        }));
+    } catch {
+      // No faces or unreadable media — the zoom keeps its current aim.
+    } finally {
+      setAiming(false);
+    }
+  };
 
   return (
     <>
@@ -234,6 +278,14 @@ function CellValues({ slide, index, ci }: { slide: Slide; index: number; ci: num
               const m = cell.motion as Extract<Cell["motion"], { type: "zoom" }>;
               patch({ motion: { ...m, origin: [m.origin[0], y] } });
             }} />
+          <div className="field">
+            <span>Aim</span>
+            <div className="field-input">
+              <button onClick={autoFocus} disabled={aiming || cell.source.type === "solid"}>
+                {aiming ? "Finding faces…" : "Auto focus"}
+              </button>
+            </div>
+          </div>
           <p className="hint">Drag the ◎ handle on the frame to aim the zoom.</p>
         </VGroup>
       )}
