@@ -126,7 +126,7 @@ impl Renderer {
         for overlay in &slide.texts {
             let opacity =
                 if reveal_texts { 1.0 } else { overlay.opacity_at(local_t, slide.duration) };
-            self.text.draw_overlay(&mut pm, overlay, opacity);
+            self.text.draw_overlay(&mut pm, overlay, opacity, project.settings.text_margin);
         }
         Ok(pm)
     }

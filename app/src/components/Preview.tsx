@@ -180,8 +180,9 @@ export default function Preview() {
 
   const handleFor = (t: TextOverlay): { left: string; top: string; tx: string; ty: string } => {
     const [ax, ay] = ANCHOR_POINTS[t.anchor] ?? [0.5, 0.5];
-    const fx = Math.min(Math.max(ax + t.offset[0], 0), 1);
-    const fy = Math.min(Math.max(ay + t.offset[1], 0), 1);
+    const m = Math.min(Math.max(project.settings.text_margin, 0), 0.2);
+    const fx = Math.min(Math.max(m + ax * (1 - 2 * m) + t.offset[0], 0), 1);
+    const fy = Math.min(Math.max(m + ay * (1 - 2 * m) + t.offset[1], 0), 1);
     return {
       left: `${fx * 100}%`,
       top: `${fy * 100}%`,

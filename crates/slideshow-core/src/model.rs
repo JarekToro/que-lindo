@@ -106,6 +106,10 @@ pub struct Settings {
     pub height: u32,
     pub fps: f64,
     pub background: Color,
+    /// Title-safe margin: text anchor regions inset from the frame edges by
+    /// this fraction (per axis), so corner and edge placements never sit on
+    /// the edge itself. Center placements are unaffected.
+    pub text_margin: f32,
 }
 
 impl Default for Settings {
@@ -115,6 +119,7 @@ impl Default for Settings {
             height: 1080,
             fps: 30.0,
             background: Color::BLACK,
+            text_margin: 0.05,
         }
     }
 }

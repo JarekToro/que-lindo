@@ -126,12 +126,14 @@ function SlideThumb({
   slide,
   thumbs,
   aspect,
+  textMargin = 0,
   receiving = false,
   fill = false,
 }: {
   slide: Slide;
   thumbs: Map<string, MediaItem>;
   aspect: number;
+  textMargin?: number;
   receiving?: boolean;
   /** Fill the parent box instead of imposing an aspect ratio (the box's own
    * proportions should then match `aspect`). */
@@ -182,10 +184,11 @@ function SlideThumb({
       {slide.texts.slice(0, 3).map((t, i) => {
         if (!t.text.trim()) return null;
         // Mirror the renderer: the text FRAME (wrap width) hangs off the
-        // anchor region; align justifies inside it.
+        // anchor region, inset by the title-safe margin.
         const [ax, ay] = ANCHOR_POINTS[t.anchor] ?? [0.5, 0.5];
-        const fx = Math.min(Math.max(ax + t.offset[0], 0), 1);
-        const fy = Math.min(Math.max(ay + t.offset[1], 0), 1);
+        const m = Math.min(Math.max(textMargin, 0), 0.2);
+        const fx = Math.min(Math.max(m + ax * (1 - 2 * m) + t.offset[0], 0), 1);
+        const fy = Math.min(Math.max(m + ay * (1 - 2 * m) + t.offset[1], 0), 1);
         return (
           <span
             key={`t${i}`}
@@ -1228,6 +1231,7 @@ export default function Timeline({
           slide={s}
           thumbs={thumbs}
           aspect={cardAspect}
+          textMargin={project.settings.text_margin}
           receiving={isReceiving && ghost?.carriesCells === true}
           fill={proportional && vertical}
         />

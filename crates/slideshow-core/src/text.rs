@@ -45,8 +45,16 @@ impl TextRenderer {
     }
 
     /// Draw `overlay` into `pixmap` for a frame of `frame_w`×`frame_h` pixels
-    /// with the given overall opacity (0..1, from timing fades and transitions).
-    pub fn draw_overlay(&mut self, pixmap: &mut Pixmap, overlay: &TextOverlay, opacity: f32) {
+    /// with the given overall opacity (0..1, from timing fades and
+    /// transitions). `text_margin` insets the anchor regions from the frame
+    /// edges (the title-safe area).
+    pub fn draw_overlay(
+        &mut self,
+        pixmap: &mut Pixmap,
+        overlay: &TextOverlay,
+        opacity: f32,
+        text_margin: f32,
+    ) {
         if overlay.text.trim().is_empty() || opacity <= 0.0 {
             return;
         }
@@ -101,8 +109,13 @@ impl TextRenderer {
         // the offset — while `align` only justifies the lines inside the
         // frame (the shaper already did that; glyph x is box-relative).
         let (ax, ay) = overlay.anchor.point();
-        let origin_x = ax * frame_w - ax * wrap_w + overlay.offset[0] * frame_w;
-        let origin_y = ay * frame_h - ay * text_h + overlay.offset[1] * frame_h;
+        // The anchor regions live inside the title-safe area: edges and
+        // corners are inset by the margin; center is unchanged.
+        let m = text_margin.clamp(0.0, 0.2);
+        let px = (m + ax * (1.0 - 2.0 * m)) * frame_w;
+        let py = (m + ay * (1.0 - 2.0 * m)) * frame_h;
+        let origin_x = px - ax * wrap_w + overlay.offset[0] * frame_w;
+        let origin_y = py - ay * text_h + overlay.offset[1] * frame_h;
 
         // Optional backing box.
         if let Some(box_color) = overlay.box_color {
@@ -218,7 +231,7 @@ mod tests {
             size: 0.1,
             ..Default::default()
         };
-        tr.draw_overlay(&mut pm, &overlay, 1.0);
+        tr.draw_overlay(&mut pm, &overlay, 1.0, 0.0);
         let lit = pm.data().chunks(4).filter(|p| p[3] > 0).count();
         assert!(lit > 500, "expected text pixels, got {lit}");
     }
@@ -237,7 +250,7 @@ mod tests {
                 shadow: false,
                 ..Default::default()
             };
-            tr.draw_overlay(&mut pm, &overlay, 1.0);
+            tr.draw_overlay(&mut pm, &overlay, 1.0, 0.0);
             let (mut sum, mut n) = (0f64, 0f64);
             for (i, px) in pm.data().chunks(4).enumerate() {
                 if px[3] > 0 {
