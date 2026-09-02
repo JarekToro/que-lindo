@@ -71,6 +71,36 @@ suite.test("moving the zoom focus visibly changes the rendered frame", async (ap
   expect(diff).toBeGreaterThan(100);
 });
 
+suite.test("zooming a whole-photo (contain) cell grows the box, not a crop inside it", async (app) => {
+  const areas = await app.evalJs(`(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const s = window.__editorStore.getState();
+    const setZ = (z) => s.mutate(p => ({ ...p, slides: p.slides.map((sl, i) => i === 1
+      ? { ...sl, margin: 0.1, background: { type: "color", color: "#000000" },
+          cells: sl.cells.map(c => ({ ...c, fit: "contain", motion: { type: "zoom", from: z, to: z, origin: [0.5, 0.5] } })) }
+      : sl) }));
+    const photoArea = () => {
+      const c = document.querySelector(".preview-stage canvas");
+      const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+      let lit = 0;
+      for (let i = 0; i < d.length; i += 64) if (d[i] + d[i + 1] + d[i + 2] > 45) lit++;
+      return lit;
+    };
+    const span = s.timing.spans[1];
+    s.setTime((span.start + span.end) / 2);
+    setZ(1.0);
+    await wait(1100);
+    const small = photoArea();
+    setZ(1.6);
+    await wait(1100);
+    const grown = photoArea();
+    return { small, grown };
+  })()`, 20000);
+  // The old behavior kept the letterbox constant (ratio 1.0); the box must
+  // grow — capped by the cell bounds it clips against once it outgrows them.
+  expect(areas.grown).toBeGreaterThan(areas.small * 1.15);
+});
+
 suite.test("the ◎ aim handle appears for a selected zooming photo", async (app) => {
   await app.evalJs(`(() => {
     const s = window.__editorStore.getState();

@@ -172,25 +172,73 @@ impl Renderer {
                 let sw = src.width() as f32;
                 let sh = src.height() as f32;
                 let win = cell.motion.window_at(progress).unwrap_or(NormRect::FULL);
-                let crop = Rect::new(win.x * sw, win.y * sh, (win.w * sw).max(1.0), (win.h * sh).max(1.0));
-                let (dest, s) = match cell.fit {
-                    Fit::Cover => (rect, (rect.w / crop.w).max(rect.h / crop.h)),
-                    Fit::Contain => {
-                        let s = (rect.w / crop.w).min(rect.h / crop.h);
-                        let dw = crop.w * s;
-                        let dh = crop.h * s;
-                        (
-                            Rect::new(rect.x + (rect.w - dw) / 2.0, rect.y + (rect.h - dh) / 2.0, dw, dh),
-                            s,
-                        )
-                    }
-                };
-                // Map source pixels so the crop window's center lands on the
-                // destination center at uniform scale `s`.
-                let t = Transform::from_translate(-(crop.x + crop.w / 2.0), -(crop.y + crop.h / 2.0))
-                    .post_scale(s, s)
-                    .post_translate(dest.x + dest.w / 2.0, dest.y + dest.h / 2.0);
-                (dest, Some(t), None)
+                // A zoom on a contained ("whole photo") cell scales the whole
+                // letterboxed box toward the frame instead of magnifying and
+                // cropping inside a fixed box — the photo stays whole until
+                // it outgrows its cell.
+                let zoom_whole = matches!(cell.fit, Fit::Contain)
+                    && matches!(cell.motion, Motion::Zoom { .. });
+                if zoom_whole {
+                    let z = (1.0 / win.w.max(0.01)).max(0.01);
+                    let s = (rect.w / sw).min(rect.h / sh) * z;
+                    let dw = sw * s;
+                    let dh = sh * s;
+                    let origin = match &cell.motion {
+                        Motion::Zoom { origin, .. } => *origin,
+                        _ => [0.5, 0.5],
+                    };
+                    // Fits → centered. Overflowing → pull the focus point
+                    // toward the cell center, never exposing a gap.
+                    let dx = if dw <= rect.w {
+                        rect.x + (rect.w - dw) / 2.0
+                    } else {
+                        (rect.x + rect.w / 2.0 - origin[0] * dw)
+                            .clamp(rect.x + rect.w - dw, rect.x)
+                    };
+                    let dy = if dh <= rect.h {
+                        rect.y + (rect.h - dh) / 2.0
+                    } else {
+                        (rect.y + rect.h / 2.0 - origin[1] * dh)
+                            .clamp(rect.y + rect.h - dh, rect.y)
+                    };
+                    let full = Rect::new(dx, dy, dw, dh);
+                    // The visible box clips against the cell.
+                    let cx0 = full.x.max(rect.x);
+                    let cy0 = full.y.max(rect.y);
+                    let cx1 = (full.x + full.w).min(rect.x + rect.w);
+                    let cy1 = (full.y + full.h).min(rect.y + rect.h);
+                    let dest = Rect::new(cx0, cy0, (cx1 - cx0).max(1.0), (cy1 - cy0).max(1.0));
+                    let t = Transform::from_translate(-sw / 2.0, -sh / 2.0)
+                        .post_scale(s, s)
+                        .post_translate(full.x + full.w / 2.0, full.y + full.h / 2.0);
+                    (dest, Some(t), None)
+                } else {
+                    let crop =
+                        Rect::new(win.x * sw, win.y * sh, (win.w * sw).max(1.0), (win.h * sh).max(1.0));
+                    let (dest, s) = match cell.fit {
+                        Fit::Cover => (rect, (rect.w / crop.w).max(rect.h / crop.h)),
+                        Fit::Contain => {
+                            let s = (rect.w / crop.w).min(rect.h / crop.h);
+                            let dw = crop.w * s;
+                            let dh = crop.h * s;
+                            (
+                                Rect::new(
+                                    rect.x + (rect.w - dw) / 2.0,
+                                    rect.y + (rect.h - dh) / 2.0,
+                                    dw,
+                                    dh,
+                                ),
+                                s,
+                            )
+                        }
+                    };
+                    // Map source pixels so the crop window's center lands on
+                    // the destination center at uniform scale `s`.
+                    let t = Transform::from_translate(-(crop.x + crop.w / 2.0), -(crop.y + crop.h / 2.0))
+                        .post_scale(s, s)
+                        .post_translate(dest.x + dest.w / 2.0, dest.y + dest.h / 2.0);
+                    (dest, Some(t), None)
+                }
             }
         };
 
