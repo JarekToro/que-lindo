@@ -175,6 +175,22 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 .color-field .hex { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 
 .member-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
+/* Pinned navigator at the top of the inspector: wraps instead of scrolling,
+   sticks while the scope scrolls beneath it. */
+.member-strip.pinned {
+  position: sticky; top: -8px; z-index: 5; flex-wrap: wrap; overflow: visible;
+  background: var(--panel); margin: -8px -8px 0; padding: 8px;
+  border-bottom: 1px solid var(--line); align-items: center;
+}
+.member-chip.slide .chip-body {
+  background: var(--panel-2); padding: 0 10px; font-weight: 600; height: 26px;
+  min-width: 0; align-self: center;
+}
+.member-strip .chip-add {
+  height: 26px; width: 26px; padding: 0; border-radius: 6px;
+  color: var(--muted); font-size: 13px;
+}
+.member-strip .menu-items { left: 0; right: auto; }
 .member-chip {
   position: relative; flex-shrink: 0; border: 2px solid transparent; border-radius: 6px;
 }
@@ -198,14 +214,13 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 }
 .member-chip:hover .chip-x { display: flex; }
 
-/* The outcome panel: a few verbs for the current selection. */
-.outcome { padding: 4px 0 12px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
-.outcome-head {
-  display: flex; align-items: center; justify-content: space-between;
-  font-weight: 600; padding: 4px 0 10px;
+/* The scope: every control for the current selection, laid flat. */
+.scope { padding: 8px 0 12px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.scope-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-weight: 600; padding: 0 0 10px;
 }
-.head-actions { display: inline-flex; gap: 4px; }
-.outcome textarea { margin-bottom: 8px; }
+.scope textarea { margin-bottom: 8px; }
 .verb-group { margin: 0 0 10px; }
 .verb-label { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
 .verb-row { display: flex; flex-wrap: wrap; gap: 4px; }
