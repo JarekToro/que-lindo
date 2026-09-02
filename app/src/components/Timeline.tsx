@@ -181,8 +181,9 @@ function SlideThumb({
       )}
       {slide.texts.slice(0, 3).map((t, i) => {
         if (!t.text.trim()) return null;
+        // Mirror the renderer: the text FRAME (wrap width) hangs off the
+        // anchor region; align justifies inside it.
         const [ax, ay] = ANCHOR_POINTS[t.anchor] ?? [0.5, 0.5];
-        const alignF = t.align === "left" ? 0 : t.align === "right" ? 1 : 0.5;
         const fx = Math.min(Math.max(ax + t.offset[0], 0), 1);
         const fy = Math.min(Math.max(ay + t.offset[1], 0), 1);
         return (
@@ -192,7 +193,9 @@ function SlideThumb({
             style={{
               left: `${fx * 100}%`,
               top: `${fy * 100}%`,
-              transform: `translate(${-alignF * 100}%, ${-ay * 100}%)`,
+              width: `${Math.min(t.max_width, 1) * 100}%`,
+              textAlign: t.align,
+              transform: `translate(${-ax * 100}%, ${-ay * 100}%)`,
               fontSize: `${Math.max(t.size * 100, 7)}cqh`,
               fontWeight: t.weight >= 600 ? 700 : 400,
               fontStyle: t.italic ? "italic" : "normal",

@@ -171,7 +171,6 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 .font-item.on { background: var(--panel); border-color: var(--accent); color: var(--accent); }
 .font-item.on .font-sample { color: var(--accent); }
 
-.snap-btn { grid-column: 2 / -1; justify-self: start; font-size: 11px; }
 .color-field { grid-column: 2 / -1; display: inline-flex; align-items: center; gap: 8px; }
 .color-field .hex { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 
@@ -402,7 +401,7 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   color: var(--muted); background: var(--panel-2); font-size: 14px;
 }
 .thumb-text {
-  position: absolute; max-width: 96%; text-align: center; pointer-events: none;
+  position: absolute; pointer-events: none;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8); line-height: 1.2;
 }
