@@ -6,6 +6,7 @@
 import { useEditor } from "../../store";
 import type { Cell, Slide, TextOverlay } from "../../types";
 import { kindLabel, LAYOUTS } from "./data";
+import FontPicker from "./FontPicker";
 import {
   AnchorGrid,
   ColorField,
@@ -272,25 +273,29 @@ function TextValues({
   fonts: string[];
 }) {
   const updateSlide = useEditor((s) => s.updateSlide);
+  const mutate = useEditor((s) => s.mutate);
   const t = slide.texts[ti];
   if (!t) return null;
   const patch = (p: Partial<TextOverlay>) =>
     updateSlide(index, { texts: slide.texts.map((x, i) => (i === ti ? { ...x, ...p } : x)) });
+  // Live font browsing: every step re-renders, one browse = one undo entry.
+  const applyFont = (font: string | null, history: boolean) =>
+    mutate(
+      (p) => ({
+        ...p,
+        slides: p.slides.map((s, i) =>
+          i === index
+            ? { ...s, texts: s.texts.map((x, j) => (j === ti ? { ...x, font } : x)) }
+            : s,
+        ),
+      }),
+      { history },
+    );
 
   return (
     <>
       <VGroup label="Type">
-        <label className="vrow">
-          <span className="vlabel">Font</span>
-          <select value={t.font ?? ""} onChange={(e) => patch({ font: e.target.value || null })}>
-            <option value="">(theme default)</option>
-            {fonts.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
-        </label>
+        <FontPicker label="Font" fonts={fonts} value={t.font} onApply={applyFont} />
         <SliderField label="Size" value={t.size} min={0.01} max={0.3} step={0.005} display="pct"
           onChange={(size) => patch({ size })} />
         <ColorField label="Color" value={t.color} onChange={(color) => patch({ color })} />
