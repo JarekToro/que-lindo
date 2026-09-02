@@ -12,25 +12,24 @@ export const LAYOUTS: { label: string; make: (n: number) => Layout }[] = [
   { label: "Featured ◨", make: () => ({ type: "featured", side: "right", ratio: 0.62 }) },
 ];
 
+/** Where a fresh zoom should aim: the cell's own origin if it already
+ * zooms, else the detected face region's center, else dead center. */
+function zoomOrigin(c: Cell): [number, number] {
+  if (c.motion.type === "zoom") return c.motion.origin;
+  if (c.smart_focus)
+    return [c.smart_focus.x + c.smart_focus.w / 2, c.smart_focus.y + c.smart_focus.h / 2];
+  return [0.5, 0.5];
+}
+
 export const MOTIONS: { label: string; value: (c: Cell) => Cell["motion"] }[] = [
   { label: "None", value: () => ({ type: "none" }) },
   {
     label: "Zoom in",
-    value: (c) => ({
-      type: "zoom",
-      from: 1.0,
-      to: 1.15,
-      origin: c.motion.type === "zoom" ? c.motion.origin : [0.5, 0.5],
-    }),
+    value: (c) => ({ type: "zoom", from: 1.0, to: 1.15, origin: zoomOrigin(c) }),
   },
   {
     label: "Zoom out",
-    value: (c) => ({
-      type: "zoom",
-      from: 1.15,
-      to: 1.0,
-      origin: c.motion.type === "zoom" ? c.motion.origin : [0.5, 0.5],
-    }),
+    value: (c) => ({ type: "zoom", from: 1.15, to: 1.0, origin: zoomOrigin(c) }),
   },
   {
     label: "Pan →",
