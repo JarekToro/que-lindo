@@ -74,7 +74,7 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   flex: 1; display: flex; align-items: center; justify-content: center;
   background: #000; border-radius: 8px; min-height: 0; overflow: hidden;
 }
-.preview-stage canvas { max-width: 100%; max-height: 100%; }
+.preview-stage canvas { max-width: 100%; max-height: 100%; width: auto; height: auto; }
 .frame-wrap { position: relative; display: flex; max-width: 100%; max-height: 100%; }
 .text-layer { position: absolute; inset: 0; }
 .text-handle {

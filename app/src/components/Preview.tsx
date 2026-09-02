@@ -23,12 +23,32 @@ export default function Preview() {
   const project = useEditor((s) => s.project);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const [hasFrame, setHasFrame] = useState(false);
   const inFlight = useRef(false);
   const wanted = useRef({ time: 0, rev: 0, reveal: false });
   const served = useRef({ time: -1, rev: -1, reveal: false });
 
   const scale = project.settings.width > 2000 ? 0.33 : 0.5;
+
+  // Size the canvas box explicitly to contain-fit the stage. Left to CSS,
+  // WKWebView's flex sizing clamps one axis without dragging the other
+  // along (aspect-ratio included), skewing the frame.
+  const fitCanvas = () => {
+    const canvas = canvasRef.current;
+    const stage = stageRef.current;
+    if (!canvas || !stage || !canvas.width || !canvas.height) return;
+    const s = Math.min(stage.clientWidth / canvas.width, stage.clientHeight / canvas.height);
+    canvas.style.width = `${Math.floor(canvas.width * s)}px`;
+    canvas.style.height = `${Math.floor(canvas.height * s)}px`;
+  };
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const ro = new ResizeObserver(fitCanvas);
+    ro.observe(stage);
+    return () => ro.disconnect();
+  }, []);
 
   // Fetch the newest wanted frame, one request in flight at a time.
   const pump = async () => {
@@ -46,8 +66,13 @@ export default function Preview() {
           const frame = await renderPreview(target.time, scale, target.reveal, target.rev);
           const canvas = canvasRef.current;
           if (canvas) {
-            if (canvas.width !== frame.width) canvas.width = frame.width;
-            if (canvas.height !== frame.height) canvas.height = frame.height;
+            if (canvas.width !== frame.width || canvas.height !== frame.height) {
+              canvas.width = frame.width;
+              canvas.height = frame.height;
+              fitCanvas();
+            } else if (!canvas.style.width) {
+              fitCanvas();
+            }
             canvas
               .getContext("2d")
               ?.putImageData(new ImageData(frame.pixels, frame.width, frame.height), 0, 0);
@@ -293,7 +318,7 @@ export default function Preview() {
 
   return (
     <main className="preview">
-      <div className="preview-stage">
+      <div className="preview-stage" ref={stageRef}>
         <div className="frame-wrap">
           <canvas ref={canvasRef} aria-label="preview" hidden={!hasFrame} />
           {hasFrame && !playing && shownSlide && (shownSlide.texts.length > 0 || zoomTarget) && (
