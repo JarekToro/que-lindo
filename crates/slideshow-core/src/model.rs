@@ -440,8 +440,10 @@ pub struct TextOverlay {
     pub start: f64,
     /// Disappear time relative to slide start; None = until slide end.
     pub end: Option<f64>,
-    /// Fade in/out duration, seconds.
+    /// Fade-in duration, seconds (also the fade-out when `fade_out` is None).
     pub fade: f64,
+    /// Fade-out duration, seconds; None = same as `fade`, 0 = no exit fade.
+    pub fade_out: Option<f64>,
 }
 
 impl Default for TextOverlay {
@@ -464,6 +466,7 @@ impl Default for TextOverlay {
             start: 0.0,
             end: None,
             fade: 0.35,
+            fade_out: None,
         }
     }
 }
@@ -475,10 +478,11 @@ impl TextOverlay {
         if t < self.start || t >= end {
             return 0.0;
         }
-        let fade = self.fade.max(0.0001);
-        let fade_in = ((t - self.start) / fade).min(1.0);
-        let fade_out = ((end - t) / fade).min(1.0);
-        (fade_in.min(fade_out) as f32).clamp(0.0, 1.0)
+        let fade_in_dur = self.fade.max(0.0);
+        let fade_out_dur = self.fade_out.unwrap_or(self.fade).max(0.0);
+        let fi = if fade_in_dur <= 0.0001 { 1.0 } else { ((t - self.start) / fade_in_dur).min(1.0) };
+        let fo = if fade_out_dur <= 0.0001 { 1.0 } else { ((end - t) / fade_out_dur).min(1.0) };
+        (fi.min(fo) as f32).clamp(0.0, 1.0)
     }
 }
 
@@ -690,6 +694,25 @@ impl<'de> Deserialize<'de> for Color {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_fades_split_enter_and_exit() {
+        let t = TextOverlay { fade: 1.0, fade_out: Some(0.0), ..Default::default() };
+        // Enter fade ramps…
+        assert!(t.opacity_at(0.5, 5.0) < 0.75);
+        assert!((t.opacity_at(2.0, 5.0) - 1.0).abs() < 1e-6);
+        // …but with fade_out 0 the text holds full opacity to the very end.
+        assert!((t.opacity_at(4.99, 5.0) - 1.0).abs() < 1e-6);
+
+        // None = exit matches the enter fade (the old behavior).
+        let both = TextOverlay { fade: 1.0, fade_out: None, ..Default::default() };
+        assert!(both.opacity_at(4.5, 5.0) < 0.75);
+
+        // Explicit long exit with a snappy enter.
+        let exit = TextOverlay { fade: 0.0, fade_out: Some(2.0), ..Default::default() };
+        assert!((exit.opacity_at(0.01, 5.0) - 1.0).abs() < 1e-6);
+        assert!(exit.opacity_at(4.0, 5.0) < 0.75);
+    }
 
     #[test]
     fn color_roundtrip() {

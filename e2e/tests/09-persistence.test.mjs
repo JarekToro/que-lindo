@@ -44,7 +44,7 @@ suite.test("a frame drag coalesces into one undo step", async (app) => {
     s.mutate(p => ({ ...p, slides: p.slides.map((sl, i) => i === 1
       ? { ...sl, texts: [{ text: "T", role: "title", font: null, weight: 400, italic: false,
           size: 0.08, color: "#ffffff", align: "center", anchor: "center", offset: [0, 0],
-          max_width: 0.85, line_height: 1.25, shadow: true, box_color: null, start: 0, end: null, fade: 0.5 }] }
+          max_width: 0.85, line_height: 1.25, shadow: true, box_color: null, start: 0, end: null, fade: 0.5, fade_out: null }] }
       : sl) }));
     s.selectSlide(1, true);
     s.selectText(0);

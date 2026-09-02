@@ -97,7 +97,10 @@ export interface TextOverlay {
   box_color: string | null;
   start: number;
   end: number | null;
+  /** Fade-in seconds (also the fade-out when fade_out is null). */
   fade: number;
+  /** Fade-out seconds; null = same as fade, 0 = no exit fade. */
+  fade_out: number | null;
 }
 
 export type TransitionKind =
