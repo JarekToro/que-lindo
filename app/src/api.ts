@@ -100,6 +100,11 @@ export const renderPreview = async (
 /** Backend answer for a queued frame request that a newer one replaced. */
 export const isSuperseded = (e: unknown): boolean => e === "superseded";
 
+/** Order-independent moment discovery (Rust): clusters of paths, from the
+ * features the import pipeline cached backend-side for each path. */
+export const groupMoments = (paths: string[]) =>
+  invoke<string[][]>("group_moments", { paths });
+
 /** Scene embedding (L2-normalized CLIP vector) or null when no model is installed. */
 export const embedMedia = (path: string) =>
   invoke<number[] | null>("embed_media", { path });

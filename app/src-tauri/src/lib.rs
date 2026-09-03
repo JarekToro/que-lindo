@@ -9,6 +9,7 @@ use anyhow::Context;
 use serde::Serialize;
 use slideshow_core::export::{CancelFlag, ExportOptions};
 use slideshow_core::{Ffmpeg, Project, Timeline};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -18,6 +19,8 @@ use tauri::{Emitter, Manager, State};
 
 pub struct AppState {
     ffmpeg: Option<Ffmpeg>,
+    /// Grouping features accumulated as import commands run, keyed by path.
+    features: Mutex<HashMap<String, slideshow_core::grouping::MediaFeatures>>,
     /// Latest project + timeline as posted by the frontend (shared with the
     /// preview render thread).
     current: Arc<Mutex<Option<preview::CurrentDoc>>>,
@@ -247,7 +250,7 @@ fn autosave_info(
 #[tauri::command]
 async fn probe_media(state: State<'_, AppState>, path: String) -> Result<ImportedMedia, String> {
     let ffmpeg = state.ffmpeg.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    let media = tauri::async_runtime::spawn_blocking(move || {
         let p = PathBuf::from(&path);
         if !p.is_file() {
             return Err(format!("{path} is not a file"));
@@ -257,17 +260,32 @@ async fn probe_media(state: State<'_, AppState>, path: String) -> Result<Importe
         Ok(ImportedMedia { path, info, captured_at })
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    with_features(&state, &media.path, |f| {
+        f.is_image = media.info.is_image;
+        f.captured_at = media.captured_at;
+    });
+    Ok(media)
 }
 
 /// The photo's faces (weighted centroid + padded union region) as frame
 /// fractions, or null when nothing is detected — zoom defaults aim at the
 /// point, Smart fit frames the region.
 #[tauri::command]
-async fn detect_focus(path: String) -> Result<Option<focus::FocusInfo>, String> {
-    tauri::async_runtime::spawn_blocking(move || Ok(focus::detect_focus(Path::new(&path))))
-        .await
-        .map_err(|e| e.to_string())?
+async fn detect_focus(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<Option<focus::FocusInfo>, String> {
+    let path2 = path.clone();
+    let det: Option<focus::FocusInfo> =
+        tauri::async_runtime::spawn_blocking(move || focus::detect_focus(Path::new(&path)))
+            .await
+            .map_err(|e| e.to_string())?;
+    // A clean run that saw nothing is real evidence: zero faces.
+    with_features(&state, &path2, |f| {
+        f.face_count = Some(det.as_ref().map_or(0, |d| d.count as u32));
+    });
+    Ok(det)
 }
 
 /// Thumbnail as raw PNG bytes. `is_image`/`duration` come from a prior
@@ -279,14 +297,18 @@ async fn media_thumb(
     is_image: bool,
     duration: f64,
 ) -> Result<Response, String> {
+    let path2 = path.clone();
     let ffmpeg = state.ffmpeg.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    let (thumb, signature) = tauri::async_runtime::spawn_blocking(move || {
         make_thumb(Path::new(&path), is_image, duration, ffmpeg.as_ref())
-            .map(Response::new)
             .map_err(|e| format!("{e:#}"))
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())??;
+    if let Some(sig) = signature {
+        with_features(&state, &path2, |f| f.signature = Some(sig));
+    }
+    Ok(Response::new(thumb))
 }
 
 /// The moment a file claims for itself: a photo's EXIF capture time, or a
@@ -305,21 +327,72 @@ fn capture_time(path: &Path, is_image: bool) -> Option<i64> {
 #[tauri::command]
 async fn embed_media(app: tauri::AppHandle, path: String) -> Result<Option<Vec<f32>>, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    tauri::async_runtime::spawn_blocking(move || embed::embed(&dir, Path::new(&path)))
+    let path2 = path.clone();
+    let emb = tauri::async_runtime::spawn_blocking(move || embed::embed(&dir, Path::new(&path)))
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if let Some(e) = &emb {
+        with_features(&app.state::<AppState>(), &path2, |f| f.embedding = Some(e.clone()));
+    }
+    Ok(emb)
 }
 
 #[tauri::command]
 async fn face_embeddings(app: tauri::AppHandle, path: String) -> Result<Vec<Vec<f32>>, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-    tauri::async_runtime::spawn_blocking(move || {
+    let path2 = path.clone();
+    let faces = tauri::async_runtime::spawn_blocking(move || {
         let p = Path::new(&path);
         let boxes = focus::face_boxes(p);
         embed::embed_faces(&dir, p, &boxes)
     })
     .await
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    with_features(&app.state::<AppState>(), &path2, |f| f.faces = faces.clone());
+    Ok(faces)
+}
+
+/// Order-independent moment discovery over already-imported media: clusters
+/// come back as path lists, using whatever features the import pipeline has
+/// cached for each path.
+#[tauri::command]
+fn group_moments(state: State<'_, AppState>, paths: Vec<String>) -> Vec<Vec<String>> {
+    let map = state.features.lock().unwrap();
+    let items: Vec<slideshow_core::grouping::MediaFeatures> = paths
+        .iter()
+        .map(|p| map.get(p).cloned().unwrap_or_default())
+        .collect();
+    drop(map);
+    slideshow_core::grouping::group_moments(&items, &paths)
+        .into_iter()
+        .map(|c| c.into_iter().map(|i| paths[i].clone()).collect())
+        .collect()
+}
+
+/// Write the whole feature cache to a JSON file (calibration harnesses read
+/// it; too big to ship over IPC).
+#[tauri::command]
+fn dump_grouping_features(state: State<'_, AppState>, out: String) -> Result<usize, String> {
+    let map = state.features.lock().unwrap();
+    let obj: HashMap<&String, serde_json::Value> = map
+        .iter()
+        .map(|(k, f)| {
+            (
+                k,
+                serde_json::json!({
+                    "is_image": f.is_image,
+                    "captured_at": f.captured_at,
+                    "embedding": f.embedding,
+                    "faces": f.faces,
+                    "signature": f.signature,
+                    "face_count": f.face_count,
+                }),
+            )
+        })
+        .collect();
+    std::fs::write(&out, serde_json::to_vec(&obj).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    Ok(obj.len())
 }
 
 #[tauri::command]
@@ -328,6 +401,45 @@ fn embed_available(app: tauri::AppHandle) -> bool {
         .app_data_dir()
         .map(|d| embed::available(&d))
         .unwrap_or(false)
+}
+
+fn with_features(
+    state: &AppState,
+    path: &str,
+    f: impl FnOnce(&mut slideshow_core::grouping::MediaFeatures),
+) {
+    let mut map = state.features.lock().unwrap();
+    f(map.entry(path.to_string()).or_default());
+}
+
+/// 6x6 mean-RGB fingerprint over the decoded image — the grouping signal
+/// that survives when metadata doesn't.
+fn image_signature(img: &image::DynamicImage) -> Vec<u8> {
+    let rgb = img.thumbnail(240, 240).into_rgb8();
+    let (w, h) = (rgb.width() as usize, rgb.height() as usize);
+    let mut sig = Vec::with_capacity(108);
+    for by in 0..6 {
+        let y0 = by * h / 6;
+        let y1 = ((by + 1) * h / 6).max(y0 + 1);
+        for bx in 0..6 {
+            let x0 = bx * w / 6;
+            let x1 = ((bx + 1) * w / 6).max(x0 + 1);
+            let (mut r, mut g, mut b, mut n) = (0u64, 0u64, 0u64, 0u64);
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    let px = rgb.get_pixel(x as u32, y as u32);
+                    r += u64::from(px.0[0]);
+                    g += u64::from(px.0[1]);
+                    b += u64::from(px.0[2]);
+                    n += 1;
+                }
+            }
+            sig.push((r / n) as u8);
+            sig.push((g / n) as u8);
+            sig.push((b / n) as u8);
+        }
+    }
+    sig
 }
 
 fn probe_any(path: &Path, ffmpeg: Option<&Ffmpeg>) -> anyhow::Result<slideshow_core::MediaInfo> {
@@ -355,13 +467,14 @@ fn make_thumb(
     is_image: bool,
     duration: f64,
     ffmpeg: Option<&Ffmpeg>,
-) -> anyhow::Result<Vec<u8>> {
+) -> anyhow::Result<(Vec<u8>, Option<Vec<u8>>)> {
     if is_image {
         let img = image::open(path)?;
+        let signature = image_signature(&img);
         let thumb = img.thumbnail(240, 240);
         let mut buf = std::io::Cursor::new(Vec::new());
         thumb.to_rgba8().write_to(&mut buf, image::ImageFormat::Png)?;
-        Ok(buf.into_inner())
+        Ok((buf.into_inner(), Some(signature)))
     } else {
         let ffmpeg = ffmpeg.context("ffmpeg needed for video thumbnail")?;
         let at = (duration * 0.1).clamp(0.0, 5.0);
@@ -374,7 +487,7 @@ fn make_thumb(
             .stderr(Stdio::null())
             .output()?;
         anyhow::ensure!(out.status.success() && !out.stdout.is_empty(), "thumbnail failed");
-        Ok(out.stdout)
+        Ok((out.stdout, None))
     }
 }
 
@@ -617,6 +730,7 @@ pub fn run() {
 
     let state = AppState {
         ffmpeg,
+        features: Mutex::new(HashMap::new()),
         current,
         preview_tx: tx,
         export_cancel: Mutex::new(None),
@@ -653,6 +767,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             embed_media,
             embed_available,
+            group_moments,
+            dump_grouping_features,
             face_embeddings,
             check_ffmpeg,
             startup_project,

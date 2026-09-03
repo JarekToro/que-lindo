@@ -695,21 +695,21 @@ export default function Timeline({
   /** Everything the builder can draw on, in bin order. */
   const buildable = useMemo(() => buildableMedia(media), [media]);
   const buildCount = buildable.filter((m) => m.info.is_image || m.info.has_video).length;
-  // Fingerprints ride in with thumbnails, and look-alike grouping needs
-  // them — building mid-import would silently group nothing.
+  // The backend's grouping features (fingerprints, embeddings, faces) land
+  // during import, and the thumb arrives with that same pipeline — building
+  // mid-import would silently group nothing.
   const stillFingerprinting =
     media.some((m) => m.status === "pending") ||
     buildable.some((m) => m.info.is_image && m.thumb === null);
 
   /** Lay the bin out as a finished film. One mutate, so one undo puts the
    * previous arrangement back. */
-  const runBuild = () => {
+  const runBuild = async () => {
     setConfirmBuild(false);
     setSuggestBuild(false);
-    mutate((p) => {
-      const built = buildSlides(buildable, p.settings);
-      return built.length ? { ...p, slides: built } : p;
-    });
+    const built = await buildSlides(buildable, useEditor.getState().project.settings);
+    if (!built.length) return;
+    mutate((p) => ({ ...p, slides: built }));
     setOpenGroupId(null);
     // Timing for the new film is still in flight; land on the opening slide
     // and let the clock follow.
@@ -721,7 +721,7 @@ export default function Timeline({
    * is asked first; an untouched one just builds. */
   const startBuild = () => {
     if (needsRebuildConfirm(slides)) setConfirmBuild(true);
-    else runBuild();
+    else void runBuild();
   };
 
   // ---- multi-selection ----

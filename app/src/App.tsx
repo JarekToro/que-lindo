@@ -52,46 +52,6 @@ declare global {
   }
 }
 
-/** 6×6 mean-RGB fingerprint of a thumbnail — enough to say "these two scans
- * look like the same roll" without any metadata. Averaged over every pixel
- * of each block by hand: a one-step drawImage shrink to 6×6 samples the
- * image sparsely instead of averaging it, which made fingerprints noisy and
- * grouping unstable. */
-function thumbSignature(thumbUrl: string): Promise<number[] | null> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext("2d");
-      if (!ctx || canvas.width < 6 || canvas.height < 6) return resolve(null);
-      ctx.drawImage(img, 0, 0);
-      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const sig: number[] = [];
-      for (let by = 0; by < 6; by++) {
-        const y0 = Math.floor((by * canvas.height) / 6);
-        const y1 = Math.floor(((by + 1) * canvas.height) / 6);
-        for (let bx = 0; bx < 6; bx++) {
-          const x0 = Math.floor((bx * canvas.width) / 6);
-          const x1 = Math.floor(((bx + 1) * canvas.width) / 6);
-          let r = 0, g = 0, b = 0, n = 0;
-          for (let y = y0; y < y1; y++) {
-            for (let x = x0; x < x1; x++) {
-              const i = (y * canvas.width + x) * 4;
-              r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
-            }
-          }
-          sig.push(Math.round(r / n), Math.round(g / n), Math.round(b / n));
-        }
-      }
-      resolve(sig);
-    };
-    img.onerror = () => resolve(null);
-    img.src = thumbUrl;
-  });
-}
-
 /**
  * Progressive import: placeholder entries land immediately, then fill in per
  * file — metadata first, thumbnail behind it. Probing runs on a bounded
@@ -134,7 +94,6 @@ export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
             faceCount = null;
           }
         }
-        const signature = thumb ? await thumbSignature(thumb).catch(() => null) : null;
         const embedding = probed.info.is_image
           ? await embedMedia(path).catch(() => null)
           : null;
@@ -143,8 +102,8 @@ export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
           : [];
         useEditor
           .getState()
-          .setThumb(path, thumb, focus, focusRect, signature, faceCount, embedding, faces);
-        done[slot] = { ...probed, thumb, focus, focusRect, signature, faceCount, embedding, faces };
+          .setThumb(path, thumb, focus, focusRect, faceCount, embedding, faces);
+        done[slot] = { ...probed, thumb, focus, focusRect, faceCount, embedding, faces };
       } catch (e) {
         console.error("import failed", path, e);
         useEditor.getState().finishImport(path, { error: String(e) });

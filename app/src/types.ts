@@ -180,10 +180,6 @@ export interface ImportedMedia extends ProbedMedia {
   focus: [number, number] | null;
   /** Padded union box of the faces [x, y, w, h]; null = nothing found. */
   focusRect: [number, number, number, number] | null;
-  /** 6×6 mean-RGB grid of the thumbnail (108 bytes, row-major) — a cheap
-   * visual fingerprint so scans and stripped-EXIF photos can still be
-   * grouped by look. Null until the thumbnail has been read. */
-  signature: number[] | null;
   /** How many faces the detector saw; null = detection didn't run. */
   faceCount: number | null;
   /** L2-normalized scene embedding; null when no embedding model is

@@ -1,24 +1,21 @@
-// One-click auto-build: a pile of photos becomes a finished draft. The bin is
-// ordered by when the shots were taken, photos from the same moment land on
-// one collage, and pacing, motion and transitions are already chosen — the
-// user opens the result to adjust it, not to assemble it.
+// One-click auto-build: a pile of photos becomes a finished draft. Photos
+// from the same moment land on one collage, moments are ordered oldest-first
+// by apparent age, and pacing, motion and transitions are already chosen —
+// the user opens the result to adjust it, not to assemble it.
 //
-// Pure and deterministic on purpose: the same bin always builds the same
-// film, and nothing here touches the store, the backend or the clock, so the
-// whole thing is testable by calling `buildSlides` with plain objects. (The
-// repo has no TS test runner yet; when one lands these exports are the unit.)
+// Moment discovery lives in Rust (`slideshow_core::grouping`): an
+// order-independent correlation clustering over the features the import
+// pipeline caches backend-side, reached through one `groupMoments` call.
+// Everything after that call is pure and deterministic — the same clusters
+// always assemble the same film.
 
+import { groupMoments } from "./api";
 import { eraScore } from "./era";
 import { smartScatterPatch } from "./layouts";
 import { GENTLE_CROSSFADE, autoLayout, cellFor, defaultSlide } from "./presets";
 import type { Cell, ImportedMedia, MediaItem, Settings, Slide, Transition } from "./types";
 
-/** Photos shot within this many seconds of the one before belong to the same
- * moment, and so to the same collage. */
-export const GROUP_WINDOW = 90;
-
-/** Most photos one auto-built collage holds; past this the moment gets a
- * second slide. */
+/** Most photos one auto-built collage holds (mirrors Rust's GROUP_SIZE). */
 export const GROUP_SIZE = 4;
 
 /** A pile this size is what the button was built for — enough photos that
@@ -47,145 +44,6 @@ function builtCell(m: ImportedMedia, index = 0): Cell {
   const cell = cellFor(m, index);
   if (m.info.is_image && m.focusRect) cell.fit = "smart";
   return cell;
-}
-
-/**
- * Discovery order: dated media sorts by capture time and each undated file
- * keeps the bin slot it arrived in (the dated ones, in time order, fill the
- * slots that were theirs). Grouping walks THIS order — the adjacency every
- * signal was calibrated on; the life-story arrangement happens per run
- * afterwards, so a sort can never split a moment apart.
- */
-export function orderByCapture(media: readonly ImportedMedia[]): ImportedMedia[] {
-  const slots: number[] = [];
-  const dated: { media: ImportedMedia; at: number; slot: number }[] = [];
-  media.forEach((m, slot) => {
-    if (m.captured_at === null) return;
-    slots.push(slot);
-    dated.push({ media: m, at: m.captured_at, slot });
-  });
-  dated.sort((a, b) => a.at - b.at || a.slot - b.slot);
-  const out = [...media];
-  slots.forEach((slot, i) => {
-    out[slot] = dated[i].media;
-  });
-  return out;
-}
-
-/** How far apart two thumbnail fingerprints may sit (mean absolute channel
- * difference, 0..255) and still read as "the same roll". Tuned against a
- * real 98-photo memorial set with no EXIF at all: 30 grouped only the
- * dead-obvious moments, 40 started joining different events; 36 catches
- * same-event and same-roll pairs while the mistakes it risks are
- * era-adjacent prints that still read as deliberate pairings. */
-export const SIGNATURE_WINDOW = 36;
-
-/** Mean absolute channel difference between two fingerprints, 0..255. */
-export function signatureDistance(a: readonly number[], b: readonly number[]): number {
-  if (a.length !== b.length || a.length === 0) return Infinity;
-  let sum = 0;
-  for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
-  return sum / a.length;
-}
-
-/** How far the tone window flexes on face evidence. Photos of one moment
- * hold the same people, so a matching face count buys the pair a looser
- * tone match, and a strongly different head count (a group photo next to a
- * portrait) all but vetoes one. Calibrated on the same real memorial set as
- * SIGNATURE_WINDOW. */
-export function faceAwareWindow(a: number | null, b: number | null): number {
-  // Zero is "the detector saw nothing", not "nobody is there" — it misses
-  // small faces in wide group shots and blurred ones mid-dance, so zero
-  // carries no evidence either way.
-  if (a === null || b === null || a === 0 || b === 0) return SIGNATURE_WINDOW;
-  const diff = Math.abs(a - b);
-  if (diff === 0) return SIGNATURE_WINDOW + 4;
-  if (diff === 1) return SIGNATURE_WINDOW + 3;
-  // A big head-count gap involving a lone subject (portrait next to a group
-  // photo) is near-proof of different moments; between two busy frames it
-  // may just be someone stepping out of shot, so only lean, don't veto.
-  return Math.min(a, b) <= 1 ? 20 : SIGNATURE_WINDOW - 3;
-}
-
-/** Scene-embedding decision bands (cosine similarity of the int8 CLIP
- * model). Above the join band two photos read as one moment regardless of
- * tone; below the reject band they read as different moments regardless of
- * it. The gap in between defers to the fingerprint + face-count rule.
- * Calibrated on the owner-labeled memorial set. */
-export const EMBED_JOIN = 0.73;
-export const EMBED_REJECT = 0.69;
-
-/** Identity rescue: "the same person appears in both, and the scenes aren't
- * alien to each other" joins even when the scene band alone wouldn't — the
- * signal that finally groups the same face across different rooms and
- * decades. Floors calibrated with the scene bands on the owner-labeled set. */
-export const FACE_MATCH = 0.65;
-export const FACE_SCENE_FLOOR = 0.58;
-
-/** Best cross-set face match between two photos' identity embeddings. */
-export function bestFaceMatch(
-  a: readonly (readonly number[])[],
-  b: readonly (readonly number[])[],
-): number {
-  let best = 0;
-  for (const x of a) for (const y of b) best = Math.max(best, embeddingSimilarity(x, y));
-  return best;
-}
-
-/** Cosine similarity of two L2-normalized embeddings. */
-export function embeddingSimilarity(a: readonly number[], b: readonly number[]): number {
-  if (a.length !== b.length || a.length === 0) return 0;
-  let dot = 0;
-  for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
-  return dot;
-}
-
-/** Whether `next` joins the run being gathered. */
-function joins(run: readonly ImportedMedia[], next: ImportedMedia): boolean {
-  if (run.length >= GROUP_SIZE) return false;
-  const prev = run[run.length - 1];
-  // Clips stand alone.
-  if (!prev.info.is_image || !next.info.is_image) return false;
-  // Both dated: the clock decides — shot within the window means one moment.
-  if (prev.captured_at !== null && next.captured_at !== null) {
-    return Math.abs(next.captured_at - prev.captured_at) <= GROUP_WINDOW;
-  }
-  // Scene embeddings see through what tone can't: same moment from a
-  // different angle joins, same tone over different content splits. A
-  // strong shared identity rescues pairs the scene alone would leave —
-  // the undecided middle falls through to the cheaper signals.
-  if (prev.embedding && next.embedding) {
-    const sim = embeddingSimilarity(prev.embedding, next.embedding);
-    if (sim >= EMBED_JOIN) return true;
-    if (
-      sim >= FACE_SCENE_FLOOR &&
-      prev.faces.length > 0 &&
-      next.faces.length > 0 &&
-      bestFaceMatch(prev.faces, next.faces) >= FACE_MATCH
-    ) {
-      return true;
-    }
-    if (sim < EMBED_REJECT) return false;
-  }
-  // Metadata gone (scans, photos stripped by sharing services): fall back to
-  // how the photos look — tone and cast, with the face count as a second
-  // witness for or against "this is one moment".
-  if (prev.signature && next.signature) {
-    const window = faceAwareWindow(prev.faceCount, next.faceCount);
-    return signatureDistance(prev.signature, next.signature) <= window;
-  }
-  return false;
-}
-
-/** The ordered media cut into runs — one run per slide. */
-export function groupRuns(ordered: readonly ImportedMedia[]): ImportedMedia[][] {
-  const runs: ImportedMedia[][] = [];
-  for (const m of ordered) {
-    const open = runs[runs.length - 1];
-    if (open && joins(open, m)) open.push(m);
-    else runs.push([m]);
-  }
-  return runs;
 }
 
 /** One photo or clip on its own slide. `index` alternates the zoom so
@@ -264,13 +122,21 @@ function runEra(run: readonly ImportedMedia[]): number {
   return best;
 }
 
-export function buildSlides(media: readonly ImportedMedia[], settings: Settings): Slide[] {
+export async function buildSlides(
+  media: readonly ImportedMedia[],
+  settings: Settings,
+): Promise<Slide[]> {
   const visual = media.filter((m) => m.info.is_image || m.info.has_video);
   const bin: MediaItem[] = visual.map((m): MediaItem => ({ status: "ready", ...m }));
-  // Group on the stable bin/EXIF order — the adjacency every signal was
-  // calibrated on — then sort whole runs by apparent age, so the film opens
-  // with the oldest-looking moments without a reshuffle ever splitting one.
-  const discovered = groupRuns(orderByCapture(visual));
+  // Discovery is order-independent: Rust clusters on the cached features and
+  // a shuffled bin yields the same moments. Whole runs then sort by apparent
+  // age, so the film opens with the oldest-looking moments without a
+  // reshuffle ever splitting one.
+  const byPath = new Map(visual.map((m) => [m.path, m]));
+  const clusters = await groupMoments(visual.map((m) => m.path));
+  const discovered = clusters
+    .map((c) => c.map((p) => byPath.get(p)).filter((m): m is ImportedMedia => m !== undefined))
+    .filter((run) => run.length > 0);
   const runs = discovered
     .map((run, slot) => ({ run, slot, era: runEra(run) }))
     .sort((a, b) => a.era - b.era || a.slot - b.slot)
