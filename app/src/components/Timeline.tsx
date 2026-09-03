@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { revealPath } from "../api";
+import { buildSlides, buildableMedia, needsRebuildConfirm } from "../autobuild";
 import { layoutRects } from "../layout";
 import { ensureAudioCtx, mixForRev } from "../mixcache";
 import {
@@ -286,6 +287,8 @@ export default function Timeline({
   const rev = useEditor((s) => s.rev);
   const dock = useEditor((s) => s.ui.dock);
   const setUi = useEditor((s) => s.setUi);
+  const suggestBuild = useEditor((s) => s.suggestBuild);
+  const setSuggestBuild = useEditor((s) => s.setSuggestBuild);
   const thumbs = useThumbs();
   /** Side-docked Time mode runs the clock top-to-bottom. A pinned Time face
    * (split layout) always sits at the bottom, so it stays horizontal. */
@@ -301,6 +304,7 @@ export default function Timeline({
   const [shelfOpen, setShelfOpen] = useState(true);
   const [cols, setCols] = useState(6);
   const [panelW, setPanelW] = useState(280);
+  const [confirmBuild, setConfirmBuild] = useState(false);
 
   const panelId = useId();
   const gridRef = useRef<HTMLDivElement | null>(null);
@@ -573,6 +577,35 @@ export default function Timeline({
   };
 
   const addEmpty = () => insertSlides(slides.length, [defaultSlide()]);
+
+  // ---- one click, whole slideshow ----
+
+  /** Everything the builder can draw on, in bin order. */
+  const buildable = useMemo(() => buildableMedia(media), [media]);
+  const buildCount = buildable.filter((m) => m.info.is_image || m.info.has_video).length;
+
+  /** Lay the bin out as a finished film. One mutate, so one undo puts the
+   * previous arrangement back. */
+  const runBuild = () => {
+    setConfirmBuild(false);
+    setSuggestBuild(false);
+    mutate((p) => {
+      const built = buildSlides(buildable, p.settings);
+      return built.length ? { ...p, slides: built } : p;
+    });
+    setOpenGroupId(null);
+    // Timing for the new film is still in flight; land on the opening slide
+    // and let the clock follow.
+    selectSlide(0, false);
+    setTime(0);
+  };
+
+  /** Building throws away whatever is arranged, so a project with real slides
+   * is asked first; an untouched one just builds. */
+  const startBuild = () => {
+    if (needsRebuildConfirm(slides)) setConfirmBuild(true);
+    else runBuild();
+  };
 
   // ---- multi-selection ----
   const selectedIdxs = useMemo(
@@ -1420,6 +1453,18 @@ export default function Timeline({
         ) : (
           <div className="timeline-actions">
             <button onClick={onImport}>+ Import</button>
+            <button
+              className={suggestBuild ? "primary" : ""}
+              onClick={startBuild}
+              disabled={buildCount === 0}
+              title={
+                buildCount === 0
+                  ? "Import photos or clips first"
+                  : "Lay out the whole bin: ordered by when the shots were taken, moments collaged, pacing and motion chosen"
+              }
+            >
+              Build slideshow
+            </button>
             <button onClick={addEmpty}>+ Blank slide</button>
             <button
               onClick={() => duplicate(selected)}
@@ -1615,6 +1660,39 @@ export default function Timeline({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {confirmBuild && (
+        <div className="modal-backdrop" onClick={() => setConfirmBuild(false)}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`${panelId}-rebuild`}
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              e.stopPropagation();
+              setConfirmBuild(false);
+            }}
+          >
+            <h2 id={`${panelId}-rebuild`}>Rebuild the slideshow?</h2>
+            <p>
+              Building lays the bin out from scratch — in the order the shots were taken, with
+              photos from the same moment collaged together.
+            </p>
+            <p className="hint">
+              The {slides.length} slide{slides.length === 1 ? "" : "s"} you have now are replaced,
+              along with their titles, layouts and timings. Undo brings them back.
+            </p>
+            <div className="row right">
+              <button onClick={() => setConfirmBuild(false)}>Cancel</button>
+              <button className="primary" autoFocus onClick={runBuild}>
+                Rebuild
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

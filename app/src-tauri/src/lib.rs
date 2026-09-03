@@ -73,6 +73,9 @@ struct Span {
 struct ImportedMedia {
     path: String,
     info: slideshow_core::MediaInfo,
+    /// When the file says it was shot, Unix seconds; None when nothing does.
+    /// Auto-build orders the film by this.
+    captured_at: Option<i64>,
 }
 
 fn timing_of(project: &Project) -> Timing {
@@ -249,7 +252,8 @@ async fn probe_media(state: State<'_, AppState>, path: String) -> Result<Importe
             return Err(format!("{path} is not a file"));
         }
         let info = probe_any(&p, ffmpeg.as_ref()).map_err(|e| format!("{e:#}"))?;
-        Ok(ImportedMedia { path, info })
+        let captured_at = capture_time(&p, info.is_image);
+        Ok(ImportedMedia { path, info, captured_at })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -282,6 +286,19 @@ async fn media_thumb(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// The moment a file claims for itself: a photo's EXIF capture time, or a
+/// clip's modification time — video containers rarely carry a shot date, and
+/// an mtime at least orders a card emptied in one go. None when neither
+/// answers (a photo stripped of EXIF keeps its place in the bin instead).
+fn capture_time(path: &Path, is_image: bool) -> Option<i64> {
+    if is_image {
+        return slideshow_core::media::exif_capture_time(path);
+    }
+    let modified = std::fs::metadata(path).ok()?.modified().ok()?;
+    let secs = modified.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+    i64::try_from(secs).ok()
 }
 
 fn probe_any(path: &Path, ffmpeg: Option<&Ffmpeg>) -> anyhow::Result<slideshow_core::MediaInfo> {
