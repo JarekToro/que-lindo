@@ -1,9 +1,15 @@
-//! Text overlay rendering via cosmic-text (shaping, wrapping, system fonts)
-//! rasterized into a tiny-skia pixmap.
+//! Text overlay rendering via cosmic-text (shaping, wrapping, system fonts).
+//! Glyphs are rasterized into a tight scratch pixmap which is composited
+//! into the frame's render context as an image, so overlays keep their
+//! draw order relative to everything else in the scene.
 
 use crate::model::{Align, Color, TextOverlay, TextRole};
 use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Style, SwashCache, Weight};
-use tiny_skia::{Pixmap, PremultipliedColorU8};
+use std::sync::Arc;
+use vello_cpu::color::AlphaColor;
+use vello_cpu::kurbo::Affine;
+use vello_cpu::peniko::{Extend, ImageQuality, ImageSampler};
+use vello_cpu::{Image, ImageSource, Pixmap, RenderContext};
 
 const CRIMSON_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/CrimsonText-Regular.ttf");
 const CRIMSON_SEMIBOLD: &[u8] = include_bytes!("../../../assets/fonts/CrimsonText-SemiBold.ttf");
@@ -44,13 +50,12 @@ impl TextRenderer {
         names
     }
 
-    /// Draw `overlay` into `pixmap` for a frame of `frame_w`×`frame_h` pixels
-    /// with the given overall opacity (0..1, from timing fades and
-    /// transitions). `text_margin` insets the anchor regions from the frame
-    /// edges (the title-safe area).
+    /// Draw `overlay` into `ctx` (sized to the frame) with the given overall
+    /// opacity (0..1, from timing fades and transitions). `text_margin`
+    /// insets the anchor regions from the frame edges (the title-safe area).
     pub fn draw_overlay(
         &mut self,
-        pixmap: &mut Pixmap,
+        ctx: &mut RenderContext,
         overlay: &TextOverlay,
         opacity: f32,
         text_margin: f32,
@@ -58,8 +63,8 @@ impl TextRenderer {
         if overlay.text.trim().is_empty() || opacity <= 0.0 {
             return;
         }
-        let frame_w = pixmap.width() as f32;
-        let frame_h = pixmap.height() as f32;
+        let frame_w = ctx.width() as f32;
+        let frame_h = ctx.height() as f32;
         let font_size = (overlay.size * frame_h).max(4.0);
         let line_height = font_size * overlay.line_height.max(0.8);
         let wrap_w = (overlay.max_width.clamp(0.05, 1.0)) * frame_w;
@@ -128,33 +133,62 @@ impl TextRenderer {
                 font_size * 0.25,
             );
             if let Some(path) = r {
-                let mut paint = tiny_skia::Paint::default();
-                paint.set_color_rgba8(
+                ctx.set_paint(AlphaColor::from_rgba8(
                     box_color.r,
                     box_color.g,
                     box_color.b,
                     (box_color.a as f32 * opacity) as u8,
-                );
-                paint.anti_alias = true;
-                pixmap.fill_path(
-                    &path,
-                    &paint,
-                    tiny_skia::FillRule::Winding,
-                    tiny_skia::Transform::identity(),
-                    None,
-                );
+                ));
+                ctx.fill_path(&path);
             }
         }
 
+        let shadow_off = (font_size * 0.045).max(1.0);
+        // Tight scratch buffer around the glyphs (padded for overshoot and
+        // the shadow offset), blitted on the CPU exactly as before, then
+        // composited into the scene as an image at integer offsets.
+        let pad = (font_size * 0.6).ceil() + 2.0;
+        let left = (origin_x + min_x - pad).floor();
+        let top = (origin_y - pad).floor();
+        let right = (origin_x + max_x + pad + shadow_off).ceil();
+        let bottom = (origin_y + text_h + pad + shadow_off).ceil();
+        let bw = ((right - left) as i64).clamp(1, u16::MAX as i64) as u16;
+        let bh = ((bottom - top) as i64).clamp(1, u16::MAX as i64) as u16;
+        let mut scratch = Pixmap::new(bw, bh);
+        let local_x = origin_x - left as f32;
+        let local_y = origin_y - top as f32;
+
         // Drop shadow: same text, offset, translucent black.
         if overlay.shadow {
-            let off = (font_size * 0.045).max(1.0);
             let shadow_color = Color::from_rgba(0, 0, 0, (160.0 * opacity) as u8);
-            self.blit_buffer(pixmap, &mut buffer, origin_x + off, origin_y + off, shadow_color, opacity * 0.75);
+            self.blit_buffer(
+                &mut scratch,
+                &mut buffer,
+                local_x + shadow_off,
+                local_y + shadow_off,
+                shadow_color,
+                opacity * 0.75,
+            );
         }
+        self.blit_buffer(&mut scratch, &mut buffer, local_x, local_y, overlay.color, opacity);
 
-        let color = overlay.color;
-        self.blit_buffer(pixmap, &mut buffer, origin_x, origin_y, color, opacity);
+        ctx.set_paint(Image {
+            image: ImageSource::Pixmap(Arc::new(scratch)),
+            sampler: ImageSampler {
+                x_extend: Extend::Pad,
+                y_extend: Extend::Pad,
+                quality: ImageQuality::Low, // nearest: 1:1 pixel copy
+                alpha: 1.0,
+            },
+        });
+        ctx.set_paint_transform(Affine::translate((left as f64, top as f64)));
+        ctx.fill_rect(&vello_cpu::kurbo::Rect::new(
+            left as f64,
+            top as f64,
+            left as f64 + bw as f64,
+            top as f64 + bh as f64,
+        ));
+        ctx.reset_paint_transform();
     }
 
     fn blit_buffer(
@@ -169,7 +203,7 @@ impl TextRenderer {
         let pw = pixmap.width() as i32;
         let ph = pixmap.height() as i32;
         let base = cosmic_text::Color::rgba(color.r, color.g, color.b, color.a);
-        let data = pixmap.data_mut();
+        let data = pixmap.data_as_u8_slice_mut();
         buffer.draw(&mut self.font_system, &mut self.swash, base, |x, y, w, h, c| {
             let a = (c.a() as f32 * opacity) as u32;
             if a == 0 {
@@ -198,9 +232,6 @@ impl TextRenderer {
                 }
             }
         });
-        // Keep the pixmap valid premultiplied RGBA (channels never exceed alpha
-        // here because source is premultiplied and blending is src-over).
-        let _ = PremultipliedColorU8::from_rgba(0, 0, 0, 0);
     }
 }
 
@@ -221,18 +252,29 @@ pub fn default_family(role: TextRole) -> &'static str {
 mod tests {
     use super::*;
     use crate::model::TextOverlay;
+    use vello_cpu::{RenderSettings, Resources};
+
+    fn render(tr: &mut TextRenderer, overlay: &TextOverlay, w: u16, h: u16) -> Pixmap {
+        let settings = RenderSettings::default();
+        let mut ctx = RenderContext::new_with(w, h, settings);
+        tr.draw_overlay(&mut ctx, overlay, 1.0, 0.0);
+        let mut pm = Pixmap::new(w, h);
+        let mut resources = Resources::default();
+        ctx.flush();
+        ctx.render(&mut pm, &mut resources);
+        pm
+    }
 
     #[test]
     fn renders_visible_pixels() {
         let mut tr = TextRenderer::new();
-        let mut pm = Pixmap::new(640, 360).unwrap();
         let overlay = TextOverlay {
             text: "In Loving Memory".into(),
             size: 0.1,
             ..Default::default()
         };
-        tr.draw_overlay(&mut pm, &overlay, 1.0, 0.0);
-        let lit = pm.data().chunks(4).filter(|p| p[3] > 0).count();
+        let pm = render(&mut tr, &overlay, 640, 360);
+        let lit = pm.data_as_u8_slice().chunks(4).filter(|p| p[3] > 0).count();
         assert!(lit > 500, "expected text pixels, got {lit}");
     }
 
@@ -241,7 +283,6 @@ mod tests {
         use crate::model::{Align, Anchor};
         let mut tr = TextRenderer::new();
         let mut centroid = |align: Align| {
-            let mut pm = Pixmap::new(640, 360).unwrap();
             let overlay = TextOverlay {
                 text: "Names".into(),
                 size: 0.1,
@@ -250,9 +291,9 @@ mod tests {
                 shadow: false,
                 ..Default::default()
             };
-            tr.draw_overlay(&mut pm, &overlay, 1.0, 0.0);
+            let pm = render(&mut tr, &overlay, 640, 360);
             let (mut sum, mut n) = (0f64, 0f64);
-            for (i, px) in pm.data().chunks(4).enumerate() {
+            for (i, px) in pm.data_as_u8_slice().chunks(4).enumerate() {
                 if px[3] > 0 {
                     sum += (i % 640) as f64;
                     n += 1.0;

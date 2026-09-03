@@ -116,16 +116,22 @@ impl FrameCache {
     }
 }
 
-/// Header + straight-alpha RGBA. tiny-skia stores premultiplied pixels;
+/// Header + straight-alpha RGBA. The pixmap stores premultiplied pixels;
 /// preview frames are opaque so this is near a memcpy, but demultiplying
 /// keeps partially transparent output correct too.
 fn frame_to_bytes(pm: &Pixmap) -> Vec<u8> {
-    let mut out = Vec::with_capacity(8 + pm.pixels().len() * 4);
-    out.extend_from_slice(&pm.width().to_le_bytes());
-    out.extend_from_slice(&pm.height().to_le_bytes());
-    for px in pm.pixels() {
-        let c = px.demultiply();
-        out.extend_from_slice(&[c.red(), c.green(), c.blue(), c.alpha()]);
+    let data = pm.data_as_u8_slice();
+    let mut out = Vec::with_capacity(8 + data.len());
+    out.extend_from_slice(&(pm.width() as u32).to_le_bytes());
+    out.extend_from_slice(&(pm.height() as u32).to_le_bytes());
+    for px in data.chunks_exact(4) {
+        let a = px[3];
+        if a == 255 || a == 0 {
+            out.extend_from_slice(px);
+        } else {
+            let un = |c: u8| ((c as u32 * 255 + (a as u32 / 2)) / a as u32).min(255) as u8;
+            out.extend_from_slice(&[un(px[0]), un(px[1]), un(px[2]), a]);
+        }
     }
     out
 }

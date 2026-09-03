@@ -7,7 +7,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::Arc;
-use tiny_skia::Pixmap;
+use vello_cpu::Pixmap;
 
 /// Longest edge kept when decoding source media.
 const MAX_DECODE_DIM: u32 = 3840;
@@ -67,6 +67,22 @@ impl Ffmpeg {
             "ffmpeg not found. Install ffmpeg (and ffprobe) on your PATH, place them next to the app, \
              or set SLIDESHOW_FFMPEG_DIR to the folder containing them."
         )
+    }
+
+    /// Whether this ffmpeg build offers the named encoder.
+    pub fn has_encoder(&self, name: &str) -> bool {
+        Command::new(&self.ffmpeg)
+            .args(["-hide_banner", "-v", "error", "-encoders"])
+            .stdin(Stdio::null())
+            .output()
+            .map(|out| {
+                out.status.success()
+                    && String::from_utf8_lossy(&out.stdout)
+                        .lines()
+                        // Listing rows look like " V....D h264_videotoolbox  desc".
+                        .any(|l| l.split_whitespace().nth(1) == Some(name))
+            })
+            .unwrap_or(false)
     }
 
     pub fn probe(&self, path: &Path) -> Result<MediaInfo> {
@@ -155,7 +171,7 @@ pub struct MediaInfo {
 // ---------------------------------------------------------------------------
 
 /// Decode an image, apply EXIF orientation, downscale to MAX_DECODE_DIM,
-/// convert to premultiplied tiny-skia pixels.
+/// convert to premultiplied pixels.
 pub fn load_image(path: &Path) -> Result<Pixmap> {
     let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
     let img = image::load_from_memory(&bytes)
@@ -192,22 +208,29 @@ fn apply_orientation(img: image::DynamicImage, o: u32) -> image::DynamicImage {
     }
 }
 
-/// Straight-alpha RGBA bytes → premultiplied tiny-skia Pixmap.
+/// Straight-alpha RGBA bytes → premultiplied vello Pixmap.
 pub fn rgba_to_pixmap(w: u32, h: u32, rgba: &[u8]) -> Result<Pixmap> {
-    let mut pm = Pixmap::new(w, h).context("zero-sized image")?;
-    let data = pm.data_mut();
+    if w == 0 || h == 0 || w > u16::MAX as u32 || h > u16::MAX as u32 {
+        anyhow::bail!("bad image dimensions {w}x{h}");
+    }
+    let mut pm = Pixmap::new(w as u16, h as u16);
+    let data = pm.data_as_u8_slice_mut();
     debug_assert_eq!(data.len(), rgba.len());
+    let mut opaque = true;
     for (dst, src) in data.chunks_exact_mut(4).zip(rgba.chunks_exact(4)) {
         let a = src[3] as u32;
         if a == 255 {
             dst.copy_from_slice(src);
         } else {
+            opaque = false;
             dst[0] = (src[0] as u32 * a / 255) as u8;
             dst[1] = (src[1] as u32 * a / 255) as u8;
             dst[2] = (src[2] as u32 * a / 255) as u8;
             dst[3] = src[3];
         }
     }
+    // Opaque sources take vello's fast blit path.
+    pm.set_may_have_transparency(!opaque);
     Ok(pm)
 }
 
