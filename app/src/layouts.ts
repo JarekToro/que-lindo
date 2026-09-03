@@ -525,6 +525,31 @@ function assignmentsFor(n: number): number[][] {
   return all;
 }
 
+/** Swap two photos' positions on the slide — the manual counterpart of
+ * smart dealing. On a custom layout (scatter, quilts, hand-edits) the slots
+ * and tilts trade places while cell order — stacking, the member strip —
+ * stays put. On ordered layouts position IS the cell order, so the cells
+ * themselves trade places. */
+export function swapPositions(slide: Slide, a: number, b: number): Partial<Slide> | null {
+  if (a === b || !slide.cells[a] || !slide.cells[b]) return null;
+  if (slide.layout.type === "custom") {
+    const rects = [...slide.layout.rects];
+    if (!rects[a] || !rects[b]) return null;
+    [rects[a], rects[b]] = [rects[b], rects[a]];
+    const cells = slide.cells.map((c, i) =>
+      i === a
+        ? { ...c, rotation: slide.cells[b].rotation }
+        : i === b
+          ? { ...c, rotation: slide.cells[a].rotation }
+          : c,
+    );
+    return { layout: { type: "custom", rects }, cells };
+  }
+  const cells = [...slide.cells];
+  [cells[a], cells[b]] = [cells[b], cells[a]];
+  return { cells };
+}
+
 /** The plain (table-order) deal of whichever variant the slide currently
  * uses — so leaving Smart lands back on the same composition. */
 export function plainScatterPatch(slide: Slide): LayoutPatch | null {
