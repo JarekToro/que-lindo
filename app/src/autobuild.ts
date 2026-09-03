@@ -63,10 +63,12 @@ export function orderByCapture(media: readonly ImportedMedia[]): ImportedMedia[]
 }
 
 /** How far apart two thumbnail fingerprints may sit (mean absolute channel
- * difference, 0..255) and still read as "the same roll". Tuned loose enough
- * for scans of prints — same era, same cast — and tight enough that a beach
- * photo never joins a living-room one. */
-export const SIGNATURE_WINDOW = 30;
+ * difference, 0..255) and still read as "the same roll". Tuned against a
+ * real 98-photo memorial set with no EXIF at all: 30 grouped only the
+ * dead-obvious moments, 40 started joining different events; 36 catches
+ * same-event and same-roll pairs while the mistakes it risks are
+ * era-adjacent prints that still read as deliberate pairings. */
+export const SIGNATURE_WINDOW = 36;
 
 /** Mean absolute channel difference between two fingerprints, 0..255. */
 export function signatureDistance(a: readonly number[], b: readonly number[]): number {
