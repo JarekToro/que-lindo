@@ -21,6 +21,8 @@ export interface UiPrefs {
   /** Split view: panels hidden independently. */
   arrangeCollapsed: boolean;
   timeCollapsed: boolean;
+  /** The "Not used" shelf's height — a real holding area, not a strip. */
+  shelfHeight: number;
 }
 
 const DEFAULT_UI: UiPrefs = {
@@ -30,6 +32,7 @@ const DEFAULT_UI: UiPrefs = {
   arrangeWidth: 340,
   arrangeCollapsed: false,
   timeCollapsed: false,
+  shelfHeight: 150,
 };
 
 function loadUiPrefs(): UiPrefs {
@@ -46,6 +49,7 @@ function loadUiPrefs(): UiPrefs {
       inspectorWidth:
         typeof p.inspectorWidth === "number" ? p.inspectorWidth : DEFAULT_UI.inspectorWidth,
       arrangeWidth: typeof p.arrangeWidth === "number" ? p.arrangeWidth : DEFAULT_UI.arrangeWidth,
+      shelfHeight: typeof p.shelfHeight === "number" ? p.shelfHeight : DEFAULT_UI.shelfHeight,
       arrangeCollapsed: p.arrangeCollapsed === true,
       timeCollapsed: p.timeCollapsed === true,
     };

@@ -20,6 +20,7 @@ import {
   slideForText,
 } from "../presets";
 import type { Member } from "../presets";
+import Splitter from "./Splitter";
 import { useEditor } from "../store";
 import type { Cell, MediaInfo, MediaItem, Slide } from "../types";
 
@@ -296,6 +297,7 @@ export default function Timeline({
   const rev = useEditor((s) => s.rev);
   const dock = useEditor((s) => s.ui.dock);
   const setUi = useEditor((s) => s.setUi);
+  const shelfHeight = useEditor((s) => s.ui.shelfHeight);
   const suggestBuild = useEditor((s) => s.suggestBuild);
   const setSuggestBuild = useEditor((s) => s.setSuggestBuild);
   const thumbs = useThumbs();
@@ -1802,9 +1804,20 @@ export default function Timeline({
       )}
 
       {face !== "time" && shelfOpen && unused.length > 0 && (
+        <>
+          <Splitter
+            axis="y"
+            sign={-1}
+            value={shelfHeight}
+            min={90}
+            max={520}
+            onChange={(v) => setUi({ shelfHeight: v })}
+            label="Resize the Not used shelf"
+          />
         <div
           id={`${panelId}-shelf`}
           className={`shelf ${shelfHot ? "drop-hot" : ""}`}
+          style={{ height: shelfHeight }}
           role="group"
           aria-label="Not used"
         >
@@ -1830,6 +1843,7 @@ export default function Timeline({
                   </span>
                 )}
                 <span className="shelf-name">{name}</span>
+                <span className="shelf-actions">
                 {m.status === "ready" && (m.info.is_image || m.info.has_video) && (
                   <button
                     title="Add to the timeline as a slide"
@@ -1856,10 +1870,12 @@ export default function Timeline({
                 >
                   ✕
                 </button>
+                </span>
               </div>
             );
           })}
         </div>
+        </>
       )}
 
       {confirmBuild && (
