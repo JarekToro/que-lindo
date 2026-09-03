@@ -50,24 +50,26 @@ function builtCell(m: ImportedMedia, index = 0): Cell {
 }
 
 /**
- * Life-story order. Dated media sorts by capture time. Undated media with a
- * scene embedding sorts by how old it *looks* (era anchors — scans and
- * prints predate any file with EXIF, so they lead the film); undated media
- * with no embedding keeps bin order among itself. The result: apparent
- * era first, then the dated timeline. Deterministic — ties keep bin order.
+ * Discovery order: dated media sorts by capture time and each undated file
+ * keeps the bin slot it arrived in (the dated ones, in time order, fill the
+ * slots that were theirs). Grouping walks THIS order — the adjacency every
+ * signal was calibrated on; the life-story arrangement happens per run
+ * afterwards, so a sort can never split a moment apart.
  */
 export function orderByCapture(media: readonly ImportedMedia[]): ImportedMedia[] {
-  const dated: { m: ImportedMedia; at: number; slot: number }[] = [];
-  const byEra: { m: ImportedMedia; era: number; slot: number }[] = [];
-  const plain: { m: ImportedMedia; slot: number }[] = [];
+  const slots: number[] = [];
+  const dated: { media: ImportedMedia; at: number; slot: number }[] = [];
   media.forEach((m, slot) => {
-    if (m.captured_at !== null) dated.push({ m, at: m.captured_at, slot });
-    else if (m.embedding) byEra.push({ m, era: eraScore(m.embedding), slot });
-    else plain.push({ m, slot });
+    if (m.captured_at === null) return;
+    slots.push(slot);
+    dated.push({ media: m, at: m.captured_at, slot });
   });
   dated.sort((a, b) => a.at - b.at || a.slot - b.slot);
-  byEra.sort((a, b) => a.era - b.era || a.slot - b.slot);
-  return [...byEra.map((x) => x.m), ...plain.map((x) => x.m), ...dated.map((x) => x.m)];
+  const out = [...media];
+  slots.forEach((slot, i) => {
+    out[slot] = dated[i].media;
+  });
+  return out;
 }
 
 /** How far apart two thumbnail fingerprints may sit (mean absolute channel
@@ -246,10 +248,33 @@ function groupSlide(run: readonly ImportedMedia[], ordinal: number, bin: MediaIt
  * the clock — the build replaces every slide, so nothing can collide, and two
  * runs over the same bin produce byte-identical output.
  */
+/** When a run happened, in comparable pseudo-years: real capture dates win,
+ * otherwise the apparent era of the oldest-looking member. */
+function runEra(run: readonly ImportedMedia[]): number {
+  let best = Infinity;
+  for (const m of run) {
+    const y =
+      m.captured_at !== null
+        ? 1970 + m.captured_at / 31_556_952
+        : m.embedding
+          ? eraScore(m.embedding)
+          : 1999.5;
+    best = Math.min(best, y);
+  }
+  return best;
+}
+
 export function buildSlides(media: readonly ImportedMedia[], settings: Settings): Slide[] {
   const visual = media.filter((m) => m.info.is_image || m.info.has_video);
   const bin: MediaItem[] = visual.map((m): MediaItem => ({ status: "ready", ...m }));
-  const runs = groupRuns(orderByCapture(visual));
+  // Group on the stable bin/EXIF order — the adjacency every signal was
+  // calibrated on — then sort whole runs by apparent age, so the film opens
+  // with the oldest-looking moments without a reshuffle ever splitting one.
+  const discovered = groupRuns(orderByCapture(visual));
+  const runs = discovered
+    .map((run, slot) => ({ run, slot, era: runEra(run) }))
+    .sort((a, b) => a.era - b.era || a.slot - b.slot)
+    .map((x) => x.run);
   let groups = 0;
   return runs.map((run, i) => {
     const slide = run.length > 1 ? groupSlide(run, groups++, bin) : soloSlide(run[0], i, settings);
