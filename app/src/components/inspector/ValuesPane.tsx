@@ -4,7 +4,15 @@
 
 import { useState } from "react";
 import { detectFocus } from "../../api";
-import { plainScatterPatch, scatterState, smartScatterPatch } from "../../layouts";
+import {
+  activeScatterVariant,
+  plainScatterPatch,
+  scatterState,
+  scatterVariantPatch,
+  scatterVariants,
+  smartScatterPatch,
+} from "../../layouts";
+import { layoutRects } from "../../layout";
 import { defaultText, lowerThird } from "../../presets";
 import { useEditor } from "../../store";
 import type { Cell, Slide, TextOverlay, TransitionKind } from "../../types";
@@ -120,27 +128,77 @@ export function MemberStrip({
   );
 }
 
-/** Scatter's layout-level face intelligence — independent of each photo's
- * own fit. Smart re-deals the pile so faces stay out from under overlaps. */
-function ScatterFacesRow({ slide, index }: { slide: Slide; index: number }) {
+/** Scatter's own controls, shown while the slide is on a pile. Smart lets
+ * the face scorer pick the variant and the deal; Manual hands the variant
+ * choice back to the user (plain table-order deal of the picked pile). */
+function ScatterRow({ slide, index }: { slide: Slide; index: number }) {
   const media = useEditor((s) => s.media);
   const updateSlide = useEditor((s) => s.updateSlide);
   const state = scatterState(slide);
   if (state === "off") return null;
+  const mode = state === "smart" ? "smart" : "manual";
+  const variants = scatterVariants(slide.cells.length);
+  const active = activeScatterVariant(slide);
   return (
-    <Segmented
-      label="Faces"
-      options={[
-        { label: "Default", value: "plain", title: "The standard pile" },
-        { label: "Smart", value: "smart", title: "Re-deal the pile so detected faces stay uncovered" },
-      ]}
-      value={state}
-      onChange={(v) => {
-        const patch =
-          v === "smart" ? smartScatterPatch(slide, media) : plainScatterPatch(slide);
-        if (patch) updateSlide(index, patch);
-      }}
-    />
+    <>
+      <Segmented
+        label="Pile"
+        options={[
+          {
+            label: "Smart",
+            value: "smart",
+            title: "Pick the pile and arrangement that keep detected faces uncovered",
+          },
+          {
+            label: "Manual",
+            value: "manual",
+            title: "Choose the pile yourself; photos keep their order",
+          },
+        ]}
+        value={mode}
+        onChange={(v) => {
+          const patch =
+            v === "smart" ? smartScatterPatch(slide, media) : plainScatterPatch(slide);
+          if (patch) updateSlide(index, patch);
+        }}
+      />
+      {mode === "manual" && variants.length > 1 && (
+        <div className="vrow">
+          <span className="vlabel">Variant</span>
+          <span className="variant-row" role="group" aria-label="Scatter variant">
+            {variants.map((v, vi) => (
+              <button
+                key={vi}
+                className={`layout-tile ${vi === active ? "on" : ""}`}
+                title={`Pile ${v.label}`}
+                aria-label={`Pile ${v.label}`}
+                aria-pressed={vi === active}
+                onClick={() => {
+                  const patch = scatterVariantPatch(slide, vi);
+                  if (patch) updateSlide(index, patch);
+                }}
+              >
+                {layoutRects({ type: "custom", rects: v.rects }, slide.cells.length, 56, 32, 0, 0.03).map(
+                  (r, ci) => (
+                    <span
+                      key={ci}
+                      className="lt-cell"
+                      style={{
+                        left: r.x,
+                        top: r.y,
+                        width: Math.max(r.w, 2),
+                        height: Math.max(r.h, 2),
+                        transform: `rotate(${v.angles[ci % v.angles.length]}deg)`,
+                      }}
+                    />
+                  ),
+                )}
+              </button>
+            ))}
+          </span>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -176,7 +234,7 @@ export function SlideValues({ slide, index }: { slide: Slide; index: number }) {
       </VGroup>
       <VGroup label="Arrangement">
         {slide.cells.length > 1 && <LayoutPicker slide={slide} index={index} />}
-        {slide.cells.length > 1 && <ScatterFacesRow slide={slide} index={index} />}
+        {slide.cells.length > 1 && <ScatterRow slide={slide} index={index} />}
         <SliderField label="Margin" value={slide.margin} min={0} max={0.2} step={0.01} display="pct"
           onChange={(v) => updateSlide(index, { margin: v })} />
         <SliderField label="Gutter" value={slide.gutter} min={0} max={0.1} step={0.005} display="pct"
