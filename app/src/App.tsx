@@ -1,12 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { checkFfmpeg, detectFocus, loadProject, mediaThumb, onFileDrop, probeMedia, startupProject } from "./api";
+import {
+  checkFfmpeg,
+  detectFocus,
+  loadProject,
+  mediaThumb,
+  missingPaths,
+  onFileDrop,
+  probeMedia,
+  startupProject,
+} from "./api";
 import { checkRecovery, useAutosave, useRecovery } from "./autosave";
 import ExportDialog from "./components/ExportDialog";
 import Inspector from "./components/Inspector";
 import Preview from "./components/Preview";
 import RecoveryDialog from "./components/RecoveryDialog";
+import RelinkDialog from "./components/RelinkDialog";
 import Splitter from "./components/Splitter";
 import Timeline from "./components/Timeline";
 import TopBar from "./components/TopBar";
@@ -89,6 +99,8 @@ export async function importIntoTimeline(paths: string[]): Promise<void> {
 export default function App() {
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatus | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [missing, setMissing] = useState<string[]>([]);
+  const [relinking, setRelinking] = useState(false);
   const undo = useEditor((s) => s.undo);
   const redo = useEditor((s) => s.redo);
   const playing = useEditor((s) => s.playing);
@@ -132,9 +144,37 @@ export default function App() {
   const project = useEditor((s) => s.project);
   useEffect(() => {
     const known = new Set(useEditor.getState().media.map((m) => m.path));
-    const missing = projectMediaPaths(project).filter((p) => !known.has(p));
-    if (missing.length) void importFiles(missing);
+    const unknown = projectMediaPaths(project).filter((p) => !known.has(p));
+    if (unknown.length) void importFiles(unknown);
   }, [project]);
+
+  // A failed import is only offered for relinking once the disk agrees the
+  // file is gone — a corrupt file or a missing ffmpeg fails too, and pointing
+  // at a new location would not help those. Keyed on the failed set alone (NUL
+  // can't occur in a path) so thumbnails filling in don't re-stat everything.
+  const media = useEditor((s) => s.media);
+  const failedKey = useMemo(() => {
+    const referenced = new Set(projectMediaPaths(project));
+    return media
+      .filter((m) => m.status === "error" && referenced.has(m.path))
+      .map((m) => m.path)
+      .join("\0");
+  }, [media, project]);
+  useEffect(() => {
+    if (!failedKey) {
+      setMissing([]);
+      return;
+    }
+    let live = true;
+    missingPaths(failedKey.split("\0"))
+      .then((gone) => {
+        if (live) setMissing(gone);
+      })
+      .catch(console.error);
+    return () => {
+      live = false;
+    };
+  }, [failedKey]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -235,7 +275,12 @@ export default function App() {
         } as CSSProperties
       }
     >
-      <TopBar ffmpeg={ffmpeg} onExport={() => setExporting(true)} />
+      <TopBar
+        ffmpeg={ffmpeg}
+        missingCount={missing.length}
+        onRelink={() => setRelinking(true)}
+        onExport={() => setExporting(true)}
+      />
       <div className={`shell shell-${dock}`}>
         {dock === "split" ? (
           <>
@@ -299,6 +344,7 @@ export default function App() {
       </div>
       {exporting && <ExportDialog onClose={() => setExporting(false)} ffmpegFound={!!ffmpeg?.found} />}
       {recovery && <RecoveryDialog offer={recovery} />}
+      {relinking && <RelinkDialog missing={missing} onClose={() => setRelinking(false)} />}
     </div>
   );
 }

@@ -35,6 +35,7 @@ export const cancelExport = () => invoke<void>("cancel_export");
 export const exportVideo = (project: Project, outPath: string, scale: number, crf: number) =>
   invoke<void>("export_video", { project, outPath, scale, crf });
 
+<<<<<<< HEAD
 /** A recovery snapshot on disk (`modified_ms` is Unix milliseconds). */
 export interface AutosaveInfo {
   path: string;
@@ -56,6 +57,17 @@ export const clearAutosave = (projectPath: string | null) =>
 /** The snapshot worth restoring, or null (none, or one older than the file). */
 export const autosaveInfo = (projectPath: string | null) =>
   invoke<AutosaveInfo | null>("autosave_info", { projectPath });
+=======
+/** Which of these paths no longer exist on disk (relinkable vs. merely broken). */
+export const missingPaths = (paths: string[]) => invoke<string[]>("missing_paths", { paths });
+
+/** Bounded recursive filename hunt under `dir`, keyed by file name. */
+export const searchMediaFolder = (dir: string, names: string[]) =>
+  invoke<{ matches: Record<string, string>; ambiguous: string[] }>("search_media_folder", {
+    dir,
+    names,
+  });
+>>>>>>> worktree-agent-ab5956253811b5e03
 
 export const setProjectBackend = (project: Project, rev: number) =>
   invoke<Timing>("set_project", { project, rev });
