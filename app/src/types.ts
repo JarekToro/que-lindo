@@ -59,6 +59,8 @@ export type Motion =
 export interface Border {
   width: number;
   color: string;
+  /** Extra frame below the photo (instant-print caption lip); 0 = plain. */
+  lip: number;
 }
 
 export interface Cell {
