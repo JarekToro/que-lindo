@@ -28,6 +28,11 @@ button {
   font-size: 12px;
 }
 button:hover { border-color: var(--accent); }
+/* Keyboard focus is brass, like every other "you are here" mark. */
+button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
 button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
 button.ghost { background: transparent; border-color: transparent; color: var(--muted); }
 button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
@@ -201,12 +206,17 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   transition: border-color 120ms ease-out, box-shadow 120ms ease-out;
 }
 .layout-tile:hover { border-color: var(--accent); }
+.layout-tile:hover .lt-cell { background: color-mix(in srgb, var(--line) 45%, var(--muted)); }
 .layout-tile.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .lt-cell {
-  position: absolute; background: var(--line); pointer-events: none;
+  position: absolute; pointer-events: none;
+  background: color-mix(in srgb, var(--line) 70%, var(--muted));
+  /* A hairline of stage black between touching cells keeps the diagram
+     readable — without it rows, columns, and grid collapse into one slab. */
+  box-shadow: 0 0 0 1px #000;
 }
-.layout-tile.on .lt-cell { background: var(--accent); opacity: 0.75; }
-.lt-cell.dashed { background: transparent; border: 1px dashed var(--accent); }
+.layout-tile.on .lt-cell:not(.dashed) { background: var(--accent); opacity: 0.85; }
+.lt-cell.dashed { background: transparent; border: 1px dashed var(--accent); box-shadow: none; }
 
 /* Where a dragged photo would land on the frame. */
 .swap-seat {
