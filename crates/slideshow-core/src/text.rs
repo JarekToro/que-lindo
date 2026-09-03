@@ -2,7 +2,7 @@
 //! (system fonts, fallback, BiDi); vello_cpu's glyph pipeline rasterizes
 //! them directly into the scene with hinting and an atlas cache.
 
-use crate::model::{Align, Color, TextOverlay, TextRole};
+use crate::model::{Align, TextOverlay, TextRole};
 use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Style, Weight};
 use vello_cpu::color::AlphaColor;
 use vello_cpu::{Glyph, RenderContext, Resources};

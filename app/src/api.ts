@@ -100,6 +100,10 @@ export const renderPreview = async (
 /** Backend answer for a queued frame request that a newer one replaced. */
 export const isSuperseded = (e: unknown): boolean => e === "superseded";
 
+/** Scene embedding (L2-normalized CLIP vector) or null when no model is installed. */
+export const embedMedia = (path: string) =>
+  invoke<number[] | null>("embed_media", { path });
+
 /** The photo's faces: weighted centroid + padded union region + count, or null. */
 export const detectFocus = (path: string) =>
   invoke<{

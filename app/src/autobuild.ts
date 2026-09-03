@@ -105,6 +105,22 @@ export function faceAwareWindow(a: number | null, b: number | null): number {
   return Math.min(a, b) <= 1 ? 20 : SIGNATURE_WINDOW - 3;
 }
 
+/** Scene-embedding decision bands (cosine similarity of the int8 CLIP
+ * model). Above the join band two photos read as one moment regardless of
+ * tone; below the reject band they read as different moments regardless of
+ * it. The gap in between defers to the fingerprint + face-count rule.
+ * Calibrated on the owner-labeled memorial set. */
+export const EMBED_JOIN = 0.73;
+export const EMBED_REJECT = 0.69;
+
+/** Cosine similarity of two L2-normalized embeddings. */
+export function embeddingSimilarity(a: readonly number[], b: readonly number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let dot = 0;
+  for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
+  return dot;
+}
+
 /** Whether `next` joins the run being gathered. */
 function joins(run: readonly ImportedMedia[], next: ImportedMedia): boolean {
   if (run.length >= GROUP_SIZE) return false;
@@ -114,6 +130,14 @@ function joins(run: readonly ImportedMedia[], next: ImportedMedia): boolean {
   // Both dated: the clock decides — shot within the window means one moment.
   if (prev.captured_at !== null && next.captured_at !== null) {
     return Math.abs(next.captured_at - prev.captured_at) <= GROUP_WINDOW;
+  }
+  // Scene embeddings see through what tone can't: same moment from a
+  // different angle joins, same tone over different content splits. The
+  // undecided middle falls through to the cheaper signals.
+  if (prev.embedding && next.embedding) {
+    const sim = embeddingSimilarity(prev.embedding, next.embedding);
+    if (sim >= EMBED_JOIN) return true;
+    if (sim < EMBED_REJECT) return false;
   }
   // Metadata gone (scans, photos stripped by sharing services): fall back to
   // how the photos look — tone and cast, with the face count as a second

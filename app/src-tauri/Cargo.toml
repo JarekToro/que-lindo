@@ -25,6 +25,8 @@ log.workspace = true
 env_logger = "0.11"
 image.workspace = true
 rustface = "0.1.7"
+ort = { version = "2.0.0-rc.13", features = ["download-binaries"] }
+ndarray = "0.17.2"
 
 [features]
 # Lets an MCP client drive and inspect the running app. Development only:

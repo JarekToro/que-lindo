@@ -1,6 +1,7 @@
 //! Tauri shell: thin command layer over slideshow-core. The frontend owns the
 //! project document; this side renders previews/exports and touches the disk.
 
+mod embed;
 mod focus;
 mod preview;
 
@@ -299,6 +300,22 @@ fn capture_time(path: &Path, is_image: bool) -> Option<i64> {
     let modified = std::fs::metadata(path).ok()?.modified().ok()?;
     let secs = modified.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
     i64::try_from(secs).ok()
+}
+
+#[tauri::command]
+async fn embed_media(app: tauri::AppHandle, path: String) -> Result<Option<Vec<f32>>, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || embed::embed(&dir, Path::new(&path)))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn embed_available(app: tauri::AppHandle) -> bool {
+    app.path()
+        .app_data_dir()
+        .map(|d| embed::available(&d))
+        .unwrap_or(false)
 }
 
 fn probe_any(path: &Path, ffmpeg: Option<&Ffmpeg>) -> anyhow::Result<slideshow_core::MediaInfo> {
@@ -622,6 +639,8 @@ pub fn run() {
     builder
         .manage(state)
         .invoke_handler(tauri::generate_handler![
+            embed_media,
+            embed_available,
             check_ffmpeg,
             startup_project,
             set_project,
