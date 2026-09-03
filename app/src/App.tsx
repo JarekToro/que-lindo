@@ -43,6 +43,28 @@ export function projectMediaPaths(p: Project): string[] {
 
 const PROBE_CONCURRENCY = 4;
 
+/** 6×6 mean-RGB fingerprint of a thumbnail — enough to say "these two scans
+ * look like the same roll" without any metadata. */
+function thumbSignature(thumbUrl: string): Promise<number[] | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 6;
+      canvas.height = 6;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return resolve(null);
+      ctx.drawImage(img, 0, 0, 6, 6);
+      const { data } = ctx.getImageData(0, 0, 6, 6);
+      const sig: number[] = [];
+      for (let i = 0; i < data.length; i += 4) sig.push(data[i], data[i + 1], data[i + 2]);
+      resolve(sig);
+    };
+    img.onerror = () => resolve(null);
+    img.src = thumbUrl;
+  });
+}
+
 /**
  * Progressive import: placeholder entries land immediately, then fill in per
  * file — metadata first, thumbnail behind it. Probing runs on a bounded
@@ -73,8 +95,9 @@ export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
         const det = probed.info.is_image ? await detectFocus(path).catch(() => null) : null;
         const focus = det?.point ?? null;
         const focusRect = det?.region ?? null;
-        useEditor.getState().setThumb(path, thumb, focus, focusRect);
-        done[slot] = { ...probed, thumb, focus, focusRect };
+        const signature = thumb ? await thumbSignature(thumb).catch(() => null) : null;
+        useEditor.getState().setThumb(path, thumb, focus, focusRect, signature);
+        done[slot] = { ...probed, thumb, focus, focusRect, signature };
       } catch (e) {
         console.error("import failed", path, e);
         useEditor.getState().finishImport(path, { error: String(e) });

@@ -62,15 +62,37 @@ export function orderByCapture(media: readonly ImportedMedia[]): ImportedMedia[]
   return out;
 }
 
+/** How far apart two thumbnail fingerprints may sit (mean absolute channel
+ * difference, 0..255) and still read as "the same roll". Tuned loose enough
+ * for scans of prints — same era, same cast — and tight enough that a beach
+ * photo never joins a living-room one. */
+export const SIGNATURE_WINDOW = 30;
+
+/** Mean absolute channel difference between two fingerprints, 0..255. */
+export function signatureDistance(a: readonly number[], b: readonly number[]): number {
+  if (a.length !== b.length || a.length === 0) return Infinity;
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
+  return sum / a.length;
+}
+
 /** Whether `next` joins the run being gathered. */
 function joins(run: readonly ImportedMedia[], next: ImportedMedia): boolean {
   if (run.length >= GROUP_SIZE) return false;
   const prev = run[run.length - 1];
-  // Clips stand alone, and so does any photo with no capture time — with no
-  // clock there is nothing to say it shares a moment with its neighbour.
+  // Clips stand alone.
   if (!prev.info.is_image || !next.info.is_image) return false;
-  if (prev.captured_at === null || next.captured_at === null) return false;
-  return Math.abs(next.captured_at - prev.captured_at) <= GROUP_WINDOW;
+  // Both dated: the clock decides — shot within the window means one moment.
+  if (prev.captured_at !== null && next.captured_at !== null) {
+    return Math.abs(next.captured_at - prev.captured_at) <= GROUP_WINDOW;
+  }
+  // Metadata gone (scans, photos stripped by sharing services): fall back to
+  // how the photos look. Neighbours whose thumbnails share tone and cast —
+  // the same roll, the same room, the same era of film — still group.
+  if (prev.signature && next.signature) {
+    return signatureDistance(prev.signature, next.signature) <= SIGNATURE_WINDOW;
+  }
+  return false;
 }
 
 /** The ordered media cut into runs — one run per slide. */
@@ -106,10 +128,11 @@ function soloSlide(m: ImportedMedia, index: number, settings: Settings): Slide {
   return slide;
 }
 
-/** One collage. Every other group lands as a print pile — scatter, dealt
- * around the faces — and the rest take the composed layout for their count,
- * so a long run of moments alternates instead of repeating. Motion stays off:
- * several photos drifting at once is noise, not movement. */
+/** One collage. Even groups take the composed layout for their count; odd
+ * groups alternate between a face-dealt scatter pile and a mosaic, so a long
+ * run of moments cycles composed → pile → composed → mosaic instead of
+ * repeating one look. Motion stays off: several photos drifting at once is
+ * noise, not movement. */
 function groupSlide(run: readonly ImportedMedia[], ordinal: number, bin: MediaItem[]): Slide {
   const cells: Cell[] = run.map((m): Cell => ({ ...cellFor(m), motion: { type: "none" } }));
   const slide = defaultSlide({
@@ -120,6 +143,13 @@ function groupSlide(run: readonly ImportedMedia[], ordinal: number, bin: MediaIt
     gutter: 0.02,
   });
   if (ordinal % 2 === 0) return slide;
+  if (ordinal % 4 === 3) {
+    slide.layout = {
+      type: "mosaic",
+      aspects: run.map((m) => (m.info.height > 0 ? m.info.width / m.info.height : 1.5)),
+    };
+    return slide;
+  }
   const patch = smartScatterPatch(slide, bin);
   if (!patch) return slide;
   slide.layout = patch.layout;
