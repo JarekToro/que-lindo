@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod compositor;
 pub mod export;
+pub mod grouping;
 pub mod layout;
 pub mod media;
 pub mod model;

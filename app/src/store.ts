@@ -121,7 +121,6 @@ export interface EditorState {
     thumb: string | null,
     focus?: [number, number] | null,
     focusRect?: [number, number, number, number] | null,
-    signature?: number[] | null,
     faceCount?: number | null,
     embedding?: number[] | null,
     faces?: number[][],
@@ -296,7 +295,6 @@ export const useEditor = create<EditorState>((set, get) => ({
               thumb: null,
               focus: null,
               focusRect: null,
-              signature: null,
               faceCount: null,
               embedding: null,
               faces: [],
@@ -305,7 +303,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     });
   },
 
-  setThumb(path, thumb, focus = null, focusRect = null, signature = null, faceCount = null, embedding = null, faces = []) {
+  setThumb(path, thumb, focus = null, focusRect = null, faceCount = null, embedding = null, faces = []) {
     const item = get().media.find((m) => m.path === path);
     if (!item || item.status !== "ready") {
       // The item left the bin while its thumbnail rendered.
@@ -315,7 +313,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({
       media: get().media.map((m): MediaItem =>
         m.path === path && m.status === "ready"
-          ? { ...m, thumb, focus, focusRect, signature, faceCount, embedding, faces }
+          ? { ...m, thumb, focus, focusRect, faceCount, embedding, faces }
           : m,
       ),
     });
