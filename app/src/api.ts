@@ -35,6 +35,28 @@ export const cancelExport = () => invoke<void>("cancel_export");
 export const exportVideo = (project: Project, outPath: string, scale: number, crf: number) =>
   invoke<void>("export_video", { project, outPath, scale, crf });
 
+/** A recovery snapshot on disk (`modified_ms` is Unix milliseconds). */
+export interface AutosaveInfo {
+  path: string;
+  modified_ms: number;
+}
+
+/** Write the recovery snapshot for a project (null path = untitled buffer). */
+export const writeAutosave = (projectPath: string | null, project: Project) =>
+  invoke<string>("write_autosave", { projectPath, project });
+
+/** Snapshot the backend's last synced document — nothing to marshal, which
+ * is all a closing window has time for. */
+export const writeAutosaveCurrent = (projectPath: string | null) =>
+  invoke<string>("write_autosave", { projectPath });
+
+export const clearAutosave = (projectPath: string | null) =>
+  invoke<void>("clear_autosave", { projectPath });
+
+/** The snapshot worth restoring, or null (none, or one older than the file). */
+export const autosaveInfo = (projectPath: string | null) =>
+  invoke<AutosaveInfo | null>("autosave_info", { projectPath });
+
 export const setProjectBackend = (project: Project, rev: number) =>
   invoke<Timing>("set_project", { project, rev });
 
