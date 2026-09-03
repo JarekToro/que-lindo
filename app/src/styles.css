@@ -544,19 +544,26 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 }
 .band-close { position: absolute; top: 6px; right: 8px; }
 
-/* The "Not used" shelf. */
+/* The "Not used" shelf: a resizable holding area for photos that don't
+ * have a place yet — thumbnails first, like the Arrange grid. */
 .shelf {
-  display: flex; gap: 8px; padding: 8px 10px; overflow-x: auto; flex-shrink: 0;
+  display: flex; flex-wrap: wrap; align-content: flex-start; gap: 8px;
+  padding: 8px 10px; overflow-y: auto; flex-shrink: 0;
   border-top: 1px solid var(--line); background: var(--bg);
 }
 .shelf-item {
-  display: flex; align-items: center; gap: 6px; padding: 4px 6px; flex-shrink: 0;
-  background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; cursor: grab;
+  display: flex; flex-direction: column; gap: 3px; padding: 3px; width: 128px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; cursor: grab;
 }
 .shelf-item img, .shelf-item .thumb-empty {
-  width: 44px; height: 33px; object-fit: cover; border-radius: 3px; background: #000; flex-shrink: 0;
+  width: 122px; height: 82px; object-fit: cover; border-radius: 5px; background: #000;
+  display: flex; align-items: center; justify-content: center; color: var(--muted);
 }
-.shelf-name { max-width: 110px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+.shelf-name {
+  max-width: 122px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 11px; color: var(--muted); padding: 0 2px;
+}
+.shelf-actions { display: flex; gap: 3px; align-items: center; }
 .shelf-item button { padding: 1px 6px; font-size: 11px; }
 
 .hint { color: var(--muted); font-size: 12px; }

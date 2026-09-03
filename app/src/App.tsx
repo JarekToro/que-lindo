@@ -180,6 +180,7 @@ export async function importIntoTimeline(paths: string[]): Promise<void> {
 
 export default function App() {
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatus | null>(null);
+  const [winW, setWinW] = useState(() => window.innerWidth);
   const [exporting, setExporting] = useState(false);
   const [missing, setMissing] = useState<string[]>([]);
   const [relinking, setRelinking] = useState(false);
@@ -191,6 +192,12 @@ export default function App() {
   const selectedSlide = useEditor((s) => s.selectedSlide);
 
   const replaceProject = useEditor((s) => s.replaceProject);
+
+  useEffect(() => {
+    const onResize = () => setWinW(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     checkFfmpeg().then(setFfmpeg).catch(console.error);
@@ -339,7 +346,9 @@ export default function App() {
       sign={1}
       value={ui.arrangeWidth}
       min={220}
-      max={640}
+      // The frame yields to the grid: Arrange may take everything except a
+      // still-usable frame + inspector strip.
+      max={Math.max(640, winW - 560)}
       onChange={(v) => setUi({ arrangeWidth: v })}
       label="Resize Arrange panel"
     />
