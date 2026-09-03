@@ -21,6 +21,7 @@ import RelinkDialog from "./components/RelinkDialog";
 import Splitter from "./components/Splitter";
 import Timeline from "./components/Timeline";
 import TopBar from "./components/TopBar";
+import { tracksWithMark } from "./marks";
 import { slideForMedia } from "./presets";
 import { useEditor } from "./store";
 import type { FfmpegStatus, ImportedMedia, Project } from "./types";
@@ -204,6 +205,18 @@ export default function App() {
         if (target.tagName === "BUTTON") return;
         e.preventDefault();
         setPlaying(!playing);
+        return;
+      }
+      if (e.key.toLowerCase() === "m" && !mod && !e.altKey) {
+        // Catching beats is a listening job: mark wherever the playhead is,
+        // whatever has focus. The mark joins the song playing under it.
+        const st = useEditor.getState();
+        if (!st.project.audio.length) return;
+        e.preventDefault();
+        st.mutate((p) => ({
+          ...p,
+          audio: tracksWithMark(p.audio, st.time, st.timing?.total ?? 0, st.media),
+        }));
         return;
       }
       // The timeline owns arrows (and more) while focus is inside it.
