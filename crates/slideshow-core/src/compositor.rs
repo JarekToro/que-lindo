@@ -9,18 +9,60 @@ use crate::timeline::Timeline;
 use crate::transitions;
 use anyhow::Result;
 use std::sync::Arc;
-use tiny_skia::{
-    FillRule, FilterQuality, Paint, PathBuilder, Pattern, Pixmap, SpreadMode, Stroke, Transform,
+use vello_cpu::color::AlphaColor;
+use vello_cpu::kurbo::{Affine, BezPath, Point, Shape};
+use vello_cpu::peniko::{Extend, ImageQuality, ImageSampler};
+use vello_cpu::{
+    Image, ImageSource, Level, Pixmap, RenderContext, RenderSettings, Resources,
 };
 
 pub struct Renderer {
     pub text: TextRenderer,
     pub cache: MediaCache,
+    ctx: RenderContext,
+    resources: Resources,
+    /// Small single-threaded context for downscaled blur backgrounds.
+    blur_ctx: RenderContext,
+    blur_resources: Resources,
+}
+
+/// Bilinear-sampled image paint, matching the old tiny-skia pattern blits.
+fn image_paint(src: Arc<Pixmap>, quality: ImageQuality) -> Image {
+    Image {
+        image: ImageSource::Pixmap(src),
+        sampler: ImageSampler {
+            x_extend: Extend::Pad,
+            y_extend: Extend::Pad,
+            quality,
+            alpha: 1.0,
+        },
+    }
+}
+
+fn rgba(color: Color) -> AlphaColor<vello_cpu::color::Srgb> {
+    AlphaColor::from_rgba8(color.r, color.g, color.b, color.a)
 }
 
 impl Renderer {
     pub fn new(ffmpeg: Option<Ffmpeg>) -> Self {
-        Self { text: TextRenderer::new(), cache: MediaCache::new(ffmpeg) }
+        let level = Level::try_detect().unwrap_or(Level::baseline());
+        // Extra worker threads; the main thread also renders.
+        let workers = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .saturating_sub(1)
+            .min(7) as u16;
+        let ctx = RenderContext::new_with(16, 16, RenderSettings { level, num_threads: workers });
+        let blur_ctx =
+            RenderContext::new_with(16, 16, RenderSettings { level, num_threads: 0 });
+        Self {
+            text: TextRenderer::new(),
+            cache: MediaCache::new(ffmpeg),
+            ctx,
+            resources: Resources::default(),
+            blur_ctx,
+            blur_resources: Resources::default(),
+        }
     }
 
     /// Render the frame at global time `t`. `scale` (0..1] shrinks the output
@@ -51,17 +93,10 @@ impl Renderer {
         let h = scaled_dim(project.settings.height, scale);
 
         let Some(spec) = timeline.sample(t) else {
-            let mut pm = Pixmap::new(w, h).unwrap();
-            fill_all(&mut pm, project.settings.background);
-            return Ok(pm);
+            return Ok(solid_frame(w, h, project.settings.background));
         };
 
         let current = self.render_slide(project, spec.slide, spec.local_t, w, h, reveal_texts)?;
-        let bg_frame = || {
-            let mut pm = Pixmap::new(w, h).unwrap();
-            fill_all(&mut pm, project.settings.background);
-            pm
-        };
         let frame = match spec.transition {
             None => current,
             Some(tr) => {
@@ -71,14 +106,19 @@ impl Renderer {
                     }
                     // The intro: the first slide arrives out of the
                     // project background.
-                    None => bg_frame(),
+                    None => solid_frame(w, h, project.settings.background),
                 };
                 transitions::blend(previous, current, tr.kind, tr.progress)
             }
         };
         // The outro: the film leaves into the background at the very end.
         match timeline.outro_at(t) {
-            Some((kind, progress)) => Ok(transitions::blend(frame, bg_frame(), kind, progress)),
+            Some((kind, progress)) => Ok(transitions::blend(
+                frame,
+                solid_frame(w, h, project.settings.background),
+                kind,
+                progress,
+            )),
             None => Ok(frame),
         }
     }
@@ -93,19 +133,19 @@ impl Renderer {
         reveal_texts: bool,
     ) -> Result<Pixmap> {
         let slide = &project.slides[idx];
-        let mut pm = Pixmap::new(w, h).unwrap();
+        self.ctx.reset_and_resize(w as u16, h as u16);
 
         match &slide.background {
-            SlideBackground::Default => fill_all(&mut pm, project.settings.background),
-            SlideBackground::Color { color } => fill_all(&mut pm, *color),
+            SlideBackground::Default => self.fill_bg(project.settings.background, w, h),
+            SlideBackground::Color { color } => self.fill_bg(*color, w, h),
             SlideBackground::Blur { cell, sigma, dim } => {
-                fill_all(&mut pm, project.settings.background);
+                self.fill_bg(project.settings.background, w, h);
                 if let Some(src) = slide
                     .cells
                     .get(*cell)
                     .and_then(|c| self.cell_pixels(c, slide, local_t).ok().flatten())
                 {
-                    draw_blurred_cover(&mut pm, &src, *sigma, *dim);
+                    self.draw_blurred_cover(&src, w, h, *sigma, *dim);
                 }
             }
         }
@@ -120,15 +160,26 @@ impl Renderer {
         );
         let progress = (local_t / slide.duration.max(0.001)).clamp(0.0, 1.0) as f32;
         for (cell, rect) in slide.cells.iter().zip(rects.iter()) {
-            self.draw_cell(&mut pm, cell, slide, *rect, progress, local_t);
+            self.draw_cell(cell, slide, *rect, progress, local_t, w, h);
         }
 
         for overlay in &slide.texts {
             let opacity =
                 if reveal_texts { 1.0 } else { overlay.opacity_at(local_t, slide.duration) };
-            self.text.draw_overlay(&mut pm, overlay, opacity, project.settings.text_margin);
+            self.text.draw_overlay(&mut self.ctx, overlay, opacity, project.settings.text_margin);
         }
+
+        let mut pm = Pixmap::new(w as u16, h as u16);
+        self.ctx.flush();
+        self.ctx.render(&mut pm, &mut self.resources);
         Ok(pm)
+    }
+
+    fn fill_bg(&mut self, color: Color, w: u32, h: u32) {
+        self.ctx.set_transform(Affine::IDENTITY);
+        self.ctx.set_paint(rgba(color));
+        self.ctx
+            .fill_rect(&vello_cpu::kurbo::Rect::new(0.0, 0.0, w as f64, h as f64));
     }
 
     /// Source pixels for a cell at slide-local time (None for solids).
@@ -146,14 +197,15 @@ impl Renderer {
 
     fn draw_cell(
         &mut self,
-        pm: &mut Pixmap,
         cell: &Cell,
         slide: &Slide,
         rect: Rect,
         progress: f32,
         local_t: f64,
+        frame_w: u32,
+        frame_h: u32,
     ) {
-        let min_dim = (pm.width().min(pm.height())) as f32;
+        let min_dim = frame_w.min(frame_h) as f32;
         let radius = (cell.corner_radius.max(0.0) * min_dim).min(rect.w.min(rect.h) / 2.0);
 
         let src = match self.cell_pixels(cell, slide, local_t) {
@@ -185,7 +237,7 @@ impl Renderer {
                     // it: a lone photo may move through the margin up to the
                     // full frame. Group members still stop at their own cell.
                     let bound = if slide.cells.len() == 1 {
-                        Rect::new(0.0, 0.0, pm.width() as f32, pm.height() as f32)
+                        Rect::new(0.0, 0.0, frame_w as f32, frame_h as f32)
                     } else {
                         rect
                     };
@@ -223,9 +275,11 @@ impl Renderer {
                     let cx1 = (full.x + full.w).min(bound.x + bound.w);
                     let cy1 = (full.y + full.h).min(bound.y + bound.h);
                     let dest = Rect::new(cx0, cy0, (cx1 - cx0).max(1.0), (cy1 - cy0).max(1.0));
-                    let t = Transform::from_translate(-sw / 2.0, -sh / 2.0)
-                        .post_scale(s, s)
-                        .post_translate(full.x + full.w / 2.0, full.y + full.h / 2.0);
+                    let t = Affine::translate((
+                        (full.x + full.w / 2.0) as f64,
+                        (full.y + full.h / 2.0) as f64,
+                    )) * Affine::scale(s as f64)
+                        * Affine::translate((-(sw as f64) / 2.0, -(sh as f64) / 2.0));
                     (dest, Some(t), None)
                 } else {
                     let mut crop =
@@ -268,9 +322,14 @@ impl Renderer {
                     };
                     // Map source pixels so the crop window's center lands on
                     // the destination center at uniform scale `s`.
-                    let t = Transform::from_translate(-(crop.x + crop.w / 2.0), -(crop.y + crop.h / 2.0))
-                        .post_scale(s, s)
-                        .post_translate(dest.x + dest.w / 2.0, dest.y + dest.h / 2.0);
+                    let t = Affine::translate((
+                        (dest.x + dest.w / 2.0) as f64,
+                        (dest.y + dest.h / 2.0) as f64,
+                    )) * Affine::scale(s as f64)
+                        * Affine::translate((
+                            -((crop.x + crop.w / 2.0) as f64),
+                            -((crop.y + crop.h / 2.0) as f64),
+                        ));
                     (dest, Some(t), None)
                 }
             }
@@ -283,10 +342,14 @@ impl Renderer {
         // Rotation spins the finished cell — image, corners, and border
         // together — about the cell's center, so overlap and tilt compose.
         let canvas = if cell.rotation.abs() > 0.01 {
-            Transform::from_rotate_at(cell.rotation, rect.x + rect.w / 2.0, rect.y + rect.h / 2.0)
+            Affine::rotate_about(
+                (cell.rotation as f64).to_radians(),
+                Point::new((rect.x + rect.w / 2.0) as f64, (rect.y + rect.h / 2.0) as f64),
+            )
         } else {
-            Transform::identity()
+            Affine::IDENTITY
         };
+        self.ctx.set_transform(canvas);
 
         // An instant-print lip extends the frame below the photo; the frame
         // fills first so the photo sits on it, and the border strokes the
@@ -298,38 +361,82 @@ impl Renderer {
             None
         };
         if let (Some(frame), Some(border)) = (&frame_path, &cell.border) {
-            let mut fp = Paint::default();
-            fp.anti_alias = true;
-            fp.set_color_rgba8(border.color.r, border.color.g, border.color.b, border.color.a);
-            pm.fill_path(frame, &fp, FillRule::Winding, canvas, None);
+            self.ctx.set_paint(rgba(border.color));
+            self.ctx.fill_path(frame);
         }
 
-        let mut paint = Paint::default();
-        paint.anti_alias = true;
         match (solid, &src, transform) {
             (Some(color), _, _) => {
-                paint.set_color_rgba8(color.r, color.g, color.b, color.a);
+                self.ctx.set_paint(rgba(color));
+                self.ctx.fill_path(&path);
             }
             (None, Some(src), Some(t)) => {
-                paint.shader = Pattern::new(
-                    src.as_ref().as_ref(),
-                    SpreadMode::Pad,
-                    FilterQuality::Bilinear,
-                    1.0,
-                    t,
-                );
+                self.ctx.set_paint(image_paint(src.clone(), ImageQuality::Medium));
+                self.ctx.set_paint_transform(t);
+                self.ctx.fill_path(&path);
+                self.ctx.reset_paint_transform();
             }
-            _ => return,
+            _ => {
+                self.ctx.set_transform(Affine::IDENTITY);
+                return;
+            }
         }
-        pm.fill_path(&path, &paint, FillRule::Winding, canvas, None);
 
         if let Some(border) = &cell.border {
             let bw = (border.width.max(0.0) * min_dim).max(0.5);
-            let mut bp = Paint::default();
-            bp.anti_alias = true;
-            bp.set_color_rgba8(border.color.r, border.color.g, border.color.b, border.color.a);
-            let stroke = Stroke { width: bw, ..Stroke::default() };
-            pm.stroke_path(frame_path.as_ref().unwrap_or(&path), &bp, &stroke, canvas, None);
+            self.ctx.set_paint(rgba(border.color));
+            self.ctx
+                .set_stroke(vello_cpu::kurbo::Stroke::new(bw as f64));
+            self.ctx.stroke_path(frame_path.as_ref().unwrap_or(&path));
+        }
+        self.ctx.set_transform(Affine::IDENTITY);
+    }
+
+    /// Cover-scale `src` over the whole frame, blurred and dimmed.
+    fn draw_blurred_cover(&mut self, src: &Arc<Pixmap>, w: u32, h: u32, sigma: f32, dim: f32) {
+        // Work at reduced size: blur cost drops and the upscale adds smoothing.
+        let small_w = (w / 4).max(2);
+        let small_h = (h / 4).max(2);
+
+        let sw = src.width() as f32;
+        let sh = src.height() as f32;
+        let s = (small_w as f32 / sw).max(small_h as f32 / sh);
+        let t = Affine::translate((small_w as f64 / 2.0, small_h as f64 / 2.0))
+            * Affine::scale(s as f64)
+            * Affine::translate((-(sw as f64) / 2.0, -(sh as f64) / 2.0));
+
+        self.blur_ctx.reset_and_resize(small_w as u16, small_h as u16);
+        self.blur_ctx.set_paint(image_paint(src.clone(), ImageQuality::Medium));
+        self.blur_ctx.set_paint_transform(t);
+        self.blur_ctx
+            .fill_rect(&vello_cpu::kurbo::Rect::new(0.0, 0.0, small_w as f64, small_h as f64));
+        let mut small = Pixmap::new(small_w as u16, small_h as u16);
+        self.blur_ctx.flush();
+        self.blur_ctx.render(&mut small, &mut self.blur_resources);
+
+        let sigma_small = (sigma.max(0.0) * small_h as f32).round() as u32;
+        if sigma_small > 0 {
+            box_blur(&mut small, sigma_small.min(small_h / 2).max(1));
+        }
+        small.set_may_have_transparency(false);
+
+        // Upscale back over the frame.
+        let up = Affine::scale_non_uniform(
+            w as f64 / small_w as f64,
+            h as f64 / small_h as f64,
+        );
+        self.ctx.set_transform(Affine::IDENTITY);
+        self.ctx.set_paint(image_paint(Arc::new(small), ImageQuality::Medium));
+        self.ctx.set_paint_transform(up);
+        self.ctx
+            .fill_rect(&vello_cpu::kurbo::Rect::new(0.0, 0.0, w as f64, h as f64));
+        self.ctx.reset_paint_transform();
+
+        if dim > 0.0 {
+            self.ctx
+                .set_paint(AlphaColor::from_rgba8(0, 0, 0, (dim.clamp(0.0, 1.0) * 255.0) as u8));
+            self.ctx
+                .fill_rect(&vello_cpu::kurbo::Rect::new(0.0, 0.0, w as f64, h as f64));
         }
     }
 }
@@ -338,78 +445,43 @@ fn scaled_dim(v: u32, scale: f32) -> u32 {
     (((v as f32 * scale.clamp(0.05, 1.0)).round() as u32) & !1).max(16)
 }
 
+/// A frame filled with one color.
+pub(crate) fn solid_frame(w: u32, h: u32, color: Color) -> Pixmap {
+    let mut pm = Pixmap::new(w as u16, h as u16);
+    fill_all(&mut pm, color);
+    pm
+}
+
 pub(crate) fn fill_all(pm: &mut Pixmap, color: Color) {
-    pm.fill(tiny_skia::Color::from_rgba8(color.r, color.g, color.b, color.a));
+    // Premultiplied fill; opaque colors are the norm here.
+    let px = [
+        (color.r as u32 * color.a as u32 / 255) as u8,
+        (color.g as u32 * color.a as u32 / 255) as u8,
+        (color.b as u32 * color.a as u32 / 255) as u8,
+        color.a,
+    ];
+    for chunk in pm.data_as_u8_slice_mut().chunks_exact_mut(4) {
+        chunk.copy_from_slice(&px);
+    }
+    pm.set_may_have_transparency(color.a != 255);
 }
 
 /// Rounded-rect path (plain rect when radius ≈ 0).
-pub(crate) fn rounded_rect_path(x: f32, y: f32, w: f32, h: f32, radius: f32) -> Option<tiny_skia::Path> {
+pub(crate) fn rounded_rect_path(x: f32, y: f32, w: f32, h: f32, radius: f32) -> Option<BezPath> {
     if w <= 0.0 || h <= 0.0 {
         return None;
     }
-    let mut pb = PathBuilder::new();
-    let r = radius.clamp(0.0, w.min(h) / 2.0);
+    let rect = vello_cpu::kurbo::Rect::new(
+        x as f64,
+        y as f64,
+        (x + w) as f64,
+        (y + h) as f64,
+    );
+    let r = radius.clamp(0.0, w.min(h) / 2.0) as f64;
     if r < 0.5 {
-        pb.push_rect(tiny_skia::Rect::from_xywh(x, y, w, h)?);
-        return pb.finish();
+        return Some(rect.to_path(0.1));
     }
-    // Cubic approximation of quarter circles.
-    const K: f32 = 0.5522848;
-    let k = r * K;
-    pb.move_to(x + r, y);
-    pb.line_to(x + w - r, y);
-    pb.cubic_to(x + w - r + k, y, x + w, y + r - k, x + w, y + r);
-    pb.line_to(x + w, y + h - r);
-    pb.cubic_to(x + w, y + h - r + k, x + w - r + k, y + h, x + w - r, y + h);
-    pb.line_to(x + r, y + h);
-    pb.cubic_to(x + r - k, y + h, x, y + h - r + k, x, y + h - r);
-    pb.line_to(x, y + r);
-    pb.cubic_to(x, y + r - k, x + r - k, y, x + r, y);
-    pb.close();
-    pb.finish()
-}
-
-/// Cover-scale `src` over the whole frame, blurred and dimmed.
-fn draw_blurred_cover(pm: &mut Pixmap, src: &Pixmap, sigma: f32, dim: f32) {
-    let w = pm.width();
-    let h = pm.height();
-    // Work at reduced size: blur cost drops and the upscale adds smoothing.
-    let small_w = (w / 4).max(2);
-    let small_h = (h / 4).max(2);
-    let mut small = Pixmap::new(small_w, small_h).unwrap();
-
-    let sw = src.width() as f32;
-    let sh = src.height() as f32;
-    let s = (small_w as f32 / sw).max(small_h as f32 / sh);
-    let t = Transform::from_translate(-sw / 2.0, -sh / 2.0)
-        .post_scale(s, s)
-        .post_translate(small_w as f32 / 2.0, small_h as f32 / 2.0);
-    let mut paint = Paint::default();
-    paint.shader = Pattern::new(src.as_ref(), SpreadMode::Pad, FilterQuality::Bilinear, 1.0, t);
-    pm_fill_rect(&mut small, 0.0, 0.0, small_w as f32, small_h as f32, &paint);
-
-    let sigma_small = (sigma.max(0.0) * small_h as f32).round() as u32;
-    if sigma_small > 0 {
-        box_blur(&mut small, sigma_small.min(small_h / 2).max(1));
-    }
-
-    // Upscale back over the frame.
-    let up = Transform::from_scale(w as f32 / small_w as f32, h as f32 / small_h as f32);
-    let mut paint = Paint::default();
-    paint.shader = Pattern::new(small.as_ref(), SpreadMode::Pad, FilterQuality::Bilinear, 1.0, up);
-    pm_fill_rect(pm, 0.0, 0.0, w as f32, h as f32, &paint);
-
-    if dim > 0.0 {
-        let mut p = Paint::default();
-        p.set_color_rgba8(0, 0, 0, (dim.clamp(0.0, 1.0) * 255.0) as u8);
-        pm_fill_rect(pm, 0.0, 0.0, w as f32, h as f32, &p);
-    }
-}
-
-fn pm_fill_rect(pm: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, paint: &Paint) {
-    if let Some(rect) = tiny_skia::Rect::from_xywh(x, y, w, h) {
-        pm.fill_rect(rect, paint, Transform::identity(), None);
-    }
+    Some(rect.to_rounded_rect(r).to_path(0.1))
 }
 
 /// Three-pass box blur ≈ gaussian. Operates on premultiplied RGBA in place.
@@ -417,7 +489,7 @@ fn box_blur(pm: &mut Pixmap, radius: u32) {
     let w = pm.width() as usize;
     let h = pm.height() as usize;
     let r = radius as usize;
-    let data = pm.data_mut();
+    let data = pm.data_as_u8_slice_mut();
     let mut tmp = vec![0u8; data.len()];
     for _ in 0..3 {
         blur_pass(data, &mut tmp, w, h, r, true);
@@ -471,20 +543,19 @@ mod tests {
     /// builds (panic: subtract with overflow) and smear garbage in release.
     #[test]
     fn box_blur_survives_bright_edges() {
-        let mut pm = Pixmap::new(64, 48).unwrap();
+        let mut pm = Pixmap::new(64, 48);
         fill_all(&mut pm, Color::from_rgb(255, 255, 255));
         box_blur(&mut pm, 9);
         // A solid frame must stay solid after blurring.
-        for px in pm.pixels() {
-            let c = px.demultiply();
-            assert!(c.red() >= 250 && c.green() >= 250 && c.blue() >= 250);
+        for px in pm.data_as_u8_slice().chunks_exact(4) {
+            assert!(px[0] >= 250 && px[1] >= 250 && px[2] >= 250);
         }
     }
 
     /// Window wider than the row: every pixel clamps to the edge.
     #[test]
     fn box_blur_window_wider_than_image() {
-        let mut pm = Pixmap::new(5, 4).unwrap();
+        let mut pm = Pixmap::new(5, 4);
         fill_all(&mut pm, Color::from_rgb(128, 128, 128));
         box_blur(&mut pm, 16);
     }
