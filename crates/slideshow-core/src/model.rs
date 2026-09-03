@@ -426,11 +426,14 @@ pub struct Border {
     /// Width as a fraction of min(frame w, h).
     pub width: f32,
     pub color: Color,
+    /// Extra frame below the photo (instant-print caption lip), as a
+    /// fraction of min(frame w, h). 0 = plain border.
+    pub lip: f32,
 }
 
 impl Default for Border {
     fn default() -> Self {
-        Self { width: 0.004, color: Color::WHITE }
+        Self { width: 0.004, color: Color::WHITE, lip: 0.0 }
     }
 }
 

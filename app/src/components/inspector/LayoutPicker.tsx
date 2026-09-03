@@ -2,7 +2,7 @@
 // so every tile shows the true shape at the slide's current member count.
 
 import { layoutRects } from "../../layout";
-import { activeLayoutIndex, layoutOptions } from "../../layouts";
+import { activeLayoutIndex, layoutOptions, scatterState } from "../../layouts";
 import { useEditor } from "../../store";
 import type { Slide } from "../../types";
 
@@ -14,7 +14,11 @@ export default function LayoutPicker({ slide, index }: { slide: Slide; index: nu
   const updateSlide = useEditor((s) => s.updateSlide);
 
   const options = layoutOptions(slide, media);
-  const active = activeLayoutIndex(options, slide);
+  let active = activeLayoutIndex(options, slide);
+  // A smart-dealt pile is still scatter: keep its tile lit, not "custom".
+  if (active < 0 && scatterState(slide) === "smart") {
+    active = options.findIndex((o) => o.key === "scatter");
+  }
 
   return (
     <div className="layout-picker" role="group" aria-label="Layout">

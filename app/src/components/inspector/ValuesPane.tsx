@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import { detectFocus } from "../../api";
+import { layoutOptions, scatterState, smartScatterPatch } from "../../layouts";
 import { defaultText, lowerThird } from "../../presets";
 import { useEditor } from "../../store";
 import type { Cell, Slide, TextOverlay, TransitionKind } from "../../types";
@@ -119,6 +120,34 @@ export function MemberStrip({
   );
 }
 
+/** Scatter's layout-level face intelligence — independent of each photo's
+ * own fit. Smart re-deals the pile so faces stay out from under overlaps. */
+function ScatterFacesRow({ slide, index }: { slide: Slide; index: number }) {
+  const media = useEditor((s) => s.media);
+  const updateSlide = useEditor((s) => s.updateSlide);
+  const state = scatterState(slide);
+  if (state === "off") return null;
+  return (
+    <Segmented
+      label="Faces"
+      options={[
+        { label: "Default", value: "plain", title: "The standard pile" },
+        { label: "Smart", value: "smart", title: "Re-deal the pile so detected faces stay uncovered" },
+      ]}
+      value={state}
+      onChange={(v) => {
+        const patch =
+          v === "smart"
+            ? smartScatterPatch(slide, media)
+            : layoutOptions(slide, media)
+                .find((o) => o.key === "scatter")
+                ?.apply(slide);
+        if (patch) updateSlide(index, patch);
+      }}
+    />
+  );
+}
+
 export function SlideValues({ slide, index }: { slide: Slide; index: number }) {
   const project = useEditor((s) => s.project);
   const updateSlide = useEditor((s) => s.updateSlide);
@@ -151,6 +180,7 @@ export function SlideValues({ slide, index }: { slide: Slide; index: number }) {
       </VGroup>
       <VGroup label="Arrangement">
         {slide.cells.length > 1 && <LayoutPicker slide={slide} index={index} />}
+        {slide.cells.length > 1 && <ScatterFacesRow slide={slide} index={index} />}
         <SliderField label="Margin" value={slide.margin} min={0} max={0.2} step={0.01} display="pct"
           onChange={(v) => updateSlide(index, { margin: v })} />
         <SliderField label="Gutter" value={slide.gutter} min={0} max={0.1} step={0.005} display="pct"
@@ -391,7 +421,7 @@ export function CellValues({ slide, index, ci }: { slide: Slide; index: number; 
           ]}
           value={cell.border ? "on" : "off"}
           onChange={(v) =>
-            patch({ border: v === "on" ? { width: 0.004, color: "#ffffff" } : null })
+            patch({ border: v === "on" ? { width: 0.004, color: "#ffffff", lip: 0 } : null })
           }
         />
         {cell.border && (
@@ -400,6 +430,15 @@ export function CellValues({ slide, index, ci }: { slide: Slide; index: number; 
               onChange={(width) => patch({ border: { ...cell.border!, width } })} />
             <ColorField label="Color" value={cell.border.color}
               onChange={(color) => patch({ border: { ...cell.border!, color } })} />
+            <Segmented
+              label="Lip"
+              options={[
+                { label: "Off", value: "off", title: "Plain even border" },
+                { label: "On", value: "on", title: "Instant-print caption lip below the photo" },
+              ]}
+              value={cell.border.lip > 0 ? "on" : "off"}
+              onChange={(v) => patch({ border: { ...cell.border!, lip: v === "on" ? 0.035 : 0 } })}
+            />
           </>
         )}
       </VGroup>

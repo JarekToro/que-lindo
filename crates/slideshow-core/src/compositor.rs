@@ -288,6 +288,22 @@ impl Renderer {
             Transform::identity()
         };
 
+        // An instant-print lip extends the frame below the photo; the frame
+        // fills first so the photo sits on it, and the border strokes the
+        // extended outline.
+        let lip = cell.border.as_ref().map(|b| b.lip.max(0.0) * min_dim).unwrap_or(0.0);
+        let frame_path = if lip > 0.5 {
+            rounded_rect_path(dest.x, dest.y, dest.w, dest.h + lip, radius)
+        } else {
+            None
+        };
+        if let (Some(frame), Some(border)) = (&frame_path, &cell.border) {
+            let mut fp = Paint::default();
+            fp.anti_alias = true;
+            fp.set_color_rgba8(border.color.r, border.color.g, border.color.b, border.color.a);
+            pm.fill_path(frame, &fp, FillRule::Winding, canvas, None);
+        }
+
         let mut paint = Paint::default();
         paint.anti_alias = true;
         match (solid, &src, transform) {
@@ -313,7 +329,7 @@ impl Renderer {
             bp.anti_alias = true;
             bp.set_color_rgba8(border.color.r, border.color.g, border.color.b, border.color.a);
             let stroke = Stroke { width: bw, ..Stroke::default() };
-            pm.stroke_path(&path, &bp, &stroke, canvas, None);
+            pm.stroke_path(frame_path.as_ref().unwrap_or(&path), &bp, &stroke, canvas, None);
         }
     }
 }
