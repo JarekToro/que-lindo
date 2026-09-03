@@ -146,15 +146,48 @@ function SlideThumb({
   const margin = receiving ? 0.04 : slide.margin;
   const rects = layoutRects(layout, n, W, H, margin, slide.gutter);
 
+  // The slide's real ground, not a flat black stand-in: the project color,
+  // a custom color, or the blurred-cover of one of its own photos.
+  const projectBg = useEditor((s) => s.project.settings.background);
+  const bg = slide.background;
+  const bgBlurThumb =
+    bg.type === "blur" ? cellThumb(slide.cells[bg.cell] ?? slide.cells[0], thumbs) : null;
+
   return (
     <div
       className="slide-thumb"
-      style={fill ? { width: "100%", height: "100%" } : { aspectRatio: `${aspect}` }}
+      style={{
+        ...(fill ? { width: "100%", height: "100%" } : { aspectRatio: `${aspect}` }),
+        backgroundColor: bg.type === "color" ? bg.color : projectBg,
+      }}
     >
+      {bgBlurThumb && (
+        <>
+          <img className="thumb-bg" src={bgBlurThumb} alt="" draggable={false} />
+          {bg.type === "blur" && bg.dim > 0 && (
+            <span className="thumb-dim" style={{ opacity: bg.dim }} />
+          )}
+        </>
+      )}
       {slide.cells.map((cell, i) => {
-        const r = rects[i];
+        let r = rects[i];
         if (!r) return null;
         const thumb = cellThumb(cell, thumbs);
+        // Mirror the renderer's fit: a contained ("whole photo") cell
+        // letterboxes inside its slot and carries its frame on the PHOTO,
+        // not the slot — so the thumb box shrinks to the photo's aspect.
+        const info = cellInfo(cell, thumbs);
+        if (cell.fit === "contain" && info && info.width > 0 && info.height > 0) {
+          const s = Math.min(r.w / info.width, r.h / info.height);
+          const dw = info.width * s;
+          const dh = info.height * s;
+          r = { x: r.x + (r.w - dw) / 2, y: r.y + (r.h - dh) / 2, w: dw, h: dh };
+        }
+        // Smart fit slides the cover crop toward the stored face region.
+        const focus =
+          cell.fit === "smart" && cell.smart_focus
+            ? `${((cell.smart_focus.x + cell.smart_focus.w / 2) * 100).toFixed(1)}% ${((cell.smart_focus.y + cell.smart_focus.h / 2) * 100).toFixed(1)}%`
+            : undefined;
         return (
           <div
             key={i}
@@ -169,7 +202,11 @@ function SlideThumb({
               borderBottomWidth: cell.border && cell.border.lip > 0 ? 3 : undefined,
             }}
           >
-            {thumb ? <img src={thumb} alt="" draggable={false} /> : <span className="thumb-empty" />}
+            {thumb ? (
+              <img src={thumb} alt="" draggable={false} style={focus ? { objectPosition: focus } : undefined} />
+            ) : (
+              <span className="thumb-empty" />
+            )}
           </div>
         );
       })}
