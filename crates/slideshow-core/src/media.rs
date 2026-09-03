@@ -195,6 +195,40 @@ fn exif_orientation(bytes: &[u8]) -> Option<u32> {
         .get_uint(0)
 }
 
+/// The photo's EXIF capture time as Unix seconds — `DateTimeOriginal`, then
+/// the digitized and file stamps. EXIF writes a bare wall clock; when no
+/// offset field accompanies it the value is read as UTC, which leaves the
+/// absolute moment off by the shooter's zone but keeps every photo shifted
+/// alike, so the ordering this feeds stays exact.
+pub fn exif_capture_time(path: &Path) -> Option<i64> {
+    let file = std::fs::File::open(path).ok()?;
+    let mut reader = std::io::BufReader::new(file);
+    let e = exif::Reader::new().read_from_container(&mut reader).ok()?;
+    let field = e
+        .get_field(exif::Tag::DateTimeOriginal, exif::In::PRIMARY)
+        .or_else(|| e.get_field(exif::Tag::DateTimeDigitized, exif::In::PRIMARY))
+        .or_else(|| e.get_field(exif::Tag::DateTime, exif::In::PRIMARY))?;
+    let exif::Value::Ascii(ref vals) = field.value else {
+        return None;
+    };
+    let dt = exif::DateTime::from_ascii(vals.first()?).ok()?;
+    let days = days_from_civil(dt.year as i64, dt.month as i64, dt.day as i64);
+    let secs = days * 86_400 + dt.hour as i64 * 3600 + dt.minute as i64 * 60 + dt.second as i64;
+    // `offset` is minutes east of UTC when the file bothered to record it.
+    Some(secs - dt.offset.unwrap_or(0) as i64 * 60)
+}
+
+/// Days from the Unix epoch to a proleptic-Gregorian date (Hinnant's
+/// days_from_civil) — enough calendar for a timestamp, without a date crate.
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
 fn apply_orientation(img: image::DynamicImage, o: u32) -> image::DynamicImage {
     match o {
         2 => img.fliph(),
