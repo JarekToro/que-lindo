@@ -11,6 +11,7 @@ import {
   probeMedia,
   startupProject,
 } from "./api";
+import { PILE_SIZE, needsRebuildConfirm } from "./autobuild";
 import { checkRecovery, useAutosave, useRecovery } from "./autosave";
 import ExportDialog from "./components/ExportDialog";
 import Inspector from "./components/Inspector";
@@ -62,7 +63,10 @@ export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
       const path = fresh[slot];
       try {
         const probed = await probeMedia(path);
-        useEditor.getState().finishImport(path, { info: probed.info });
+        useEditor.getState().finishImport(path, {
+          info: probed.info,
+          captured_at: probed.captured_at,
+        });
         const thumb = await mediaThumb(probed);
         // Aim zoom defaults at faces; failures just mean a centered zoom.
         const det = probed.info.is_image ? await detectFocus(path).catch(() => null) : null;
@@ -87,6 +91,9 @@ export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
  * the "Not used" shelf for an explicit decision.
  */
 export async function importIntoTimeline(paths: string[]): Promise<void> {
+  // Whether there was anything to lose *before* the import decides whether
+  // Arrange offers to build the whole thing afterwards.
+  const wasBlank = !needsRebuildConfirm(useEditor.getState().project.slides);
   const items = await importFiles(paths);
   const visual = items.filter((m) => m.info.is_image || m.info.has_video);
   if (!visual.length) return;
@@ -94,6 +101,10 @@ export async function importIntoTimeline(paths: string[]): Promise<void> {
     ...p,
     slides: [...p.slides, ...visual.map(slideForMedia)],
   }));
+  // A whole pile into an empty project is exactly the case one click handles.
+  if (wasBlank && visual.filter((m) => m.info.is_image).length >= PILE_SIZE) {
+    useEditor.getState().setSuggestBuild(true);
+  }
 }
 
 export default function App() {
