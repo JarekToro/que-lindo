@@ -451,6 +451,11 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
 }
 .shelf.drop-hot { outline: 1px solid var(--accent); outline-offset: -1px; }
+.marquee {
+  position: fixed; z-index: 190; pointer-events: none;
+  border: 1px solid var(--accent); border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
 .slide-card.selected { border-color: var(--accent); }
 .slide-card.selected.anchor { box-shadow: 0 0 0 1px var(--accent); }
 .slide-card:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
