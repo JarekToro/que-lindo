@@ -84,6 +84,9 @@ export interface EditorState {
   playUntil: number | null;
   /** Which face the timeline shows: space (arrange) or time. */
   mode: "arrange" | "time";
+  /** A pile just landed in a project with nothing arranged yet: Arrange draws
+   * "Build slideshow" in brass until the build runs. A state, not a popup. */
+  suggestBuild: boolean;
   /** Panel layout preferences (persisted per machine, not per project). */
   ui: UiPrefs;
 
@@ -96,6 +99,7 @@ export interface EditorState {
    * imports land as one gesture). */
   mutate(fn: (p: Project) => Project, opts?: { history?: boolean }): void;
   setMode(mode: "arrange" | "time"): void;
+  setSuggestBuild(on: boolean): void;
   setUi(patch: Partial<UiPrefs>): void;
   updateSlide(index: number, patch: Partial<Slide>): void;
   selectSlide(index: number, seek?: boolean): void;
@@ -104,7 +108,10 @@ export interface EditorState {
   selectCell(index: number | null): void;
   selectText(index: number | null): void;
   beginImport(paths: string[]): void;
-  finishImport(path: string, result: { info: MediaInfo } | { error: string }): void;
+  finishImport(
+    path: string,
+    result: { info: MediaInfo; captured_at: number | null } | { error: string },
+  ): void;
   setThumb(
     path: string,
     thumb: string | null,
@@ -159,6 +166,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   playing: false,
   playUntil: null,
   mode: "arrange",
+  suggestBuild: false,
   ui: loadUiPrefs(),
   past: [],
   future: [],
@@ -176,6 +184,8 @@ export const useEditor = create<EditorState>((set, get) => ({
       selectedText: null,
       time: 0,
       playing: false,
+      // A different project: whatever the last import suggested is stale.
+      suggestBuild: false,
     });
     scheduleSync(get, set);
   },
@@ -197,6 +207,10 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setMode(mode) {
     set({ mode });
+  },
+
+  setSuggestBuild(on) {
+    set({ suggestBuild: on });
   },
 
   setUi(patch) {
@@ -266,7 +280,15 @@ export const useEditor = create<EditorState>((set, get) => ({
         if (m.path !== path || m.status !== "pending") return m;
         return "error" in result
           ? { status: "error", path, error: result.error }
-          : { status: "ready", path, info: result.info, thumb: null, focus: null, focusRect: null };
+          : {
+              status: "ready",
+              path,
+              info: result.info,
+              captured_at: result.captured_at,
+              thumb: null,
+              focus: null,
+              focusRect: null,
+            };
       }),
     });
   },

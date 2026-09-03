@@ -164,6 +164,9 @@ export interface MediaInfo {
 export interface ProbedMedia {
   path: string;
   info: MediaInfo;
+  /** When the file says it was shot, Unix seconds — EXIF for photos, file
+   * mtime for clips; null when nothing says. Auto-build orders by this. */
+  captured_at: number | null;
 }
 
 /** A probed file plus its thumbnail (object URL) and detected focal point,
