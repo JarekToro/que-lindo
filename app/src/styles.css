@@ -534,6 +534,25 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 }
 .modal h2 { margin: 0 0 12px; font-size: 16px; }
 .modal progress { width: 100%; accent-color: var(--accent); }
+.preset-list { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.preset {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  width: 100%; padding: 8px 10px; text-align: left;
+  transition: border-color 120ms ease-out;
+}
+.preset.selected { border-color: var(--accent); }
+.preset-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.preset-name { font-weight: 600; }
+.preset.selected .preset-name { color: var(--accent); }
+.preset-desc { color: var(--muted); font-size: 11px; }
+.preset-size {
+  font-family: var(--mono); font-size: 11px; font-variant-numeric: tabular-nums;
+  color: var(--muted); white-space: nowrap;
+}
+.preset-custom {
+  border: 1px solid var(--line); border-radius: 6px;
+  padding: 4px 10px; margin: -4px 0 10px;
+}
 .error-box {
   background: #2a1d1b; border: 1px solid var(--danger); color: #f2b9b0;
   border-radius: 6px; padding: 8px; white-space: pre-wrap; max-height: 160px; overflow: auto;
