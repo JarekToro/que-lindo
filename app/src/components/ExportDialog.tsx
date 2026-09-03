@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { cancelExport, exportVideo, onExportDone, onExportProgress, revealPath } from "../api";
 import { useEditor } from "../store";
@@ -42,6 +42,50 @@ export default function ExportDialog({
   const [progress, setProgress] = useState({ done: 0, total: 1 });
   const [error, setError] = useState<string | null>(null);
   const [outPath, setOutPath] = useState<string | null>(null);
+  const titleId = useId();
+  const modalRef = useRef<HTMLDivElement | null>(null);
+
+  const focusables = (): HTMLElement[] =>
+    [
+      ...(modalRef.current?.querySelectorAll<HTMLElement>(
+        "button, select, input, a[href], [tabindex]:not([tabindex='-1'])",
+      ) ?? []),
+    ].filter((el) => !el.hasAttribute("disabled"));
+
+  const trapKeys = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape" && phase !== "running") {
+      e.stopPropagation();
+      onClose();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const all = focusables();
+    if (!all.length) return;
+    const first = all[0];
+    const last = all[all.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || !modalRef.current?.contains(active))) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
+  // Modal focus: whatever opened the dialog gets it back on close; Tab cycles
+  // inside meanwhile (see trapKeys).
+  useEffect(() => {
+    const invoker = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    return () => invoker?.focus();
+  }, []);
+
+  // Every phase swaps the dialog's controls out from under focus, so the first
+  // control of the new phase takes it.
+  useEffect(() => {
+    if (!modalRef.current?.contains(document.activeElement)) focusables()[0]?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   useEffect(() => {
     const unsubs = [
@@ -109,8 +153,16 @@ export default function ExportDialog({
 
   return (
     <div className="modal-backdrop" onClick={() => phase !== "running" && onClose()}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Export video</h2>
+      <div
+        className="modal"
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={trapKeys}
+      >
+        <h2 id={titleId}>Export video</h2>
         {phase === "setup" && (
           <>
             {!ffmpegFound && (
@@ -183,8 +235,13 @@ export default function ExportDialog({
         )}
         {phase === "running" && (
           <>
-            <progress value={progress.done} max={progress.total} />
-            <p className="hint center">
+            <progress
+              value={progress.done}
+              max={progress.total}
+              aria-label="Export progress"
+              aria-valuetext={`${pct}%`}
+            />
+            <p className="hint center" role="status">
               frame {progress.done} / {progress.total} ({pct}%)
             </p>
             <div className="row right">
@@ -194,7 +251,9 @@ export default function ExportDialog({
         )}
         {phase === "done" && (
           <>
-            <p>✅ Export finished.</p>
+            <p role="status">
+              <span aria-hidden="true">✅ </span>Export finished.
+            </p>
             <div className="row right">
               {outPath && <button onClick={() => revealPath(outPath)}>Show in folder</button>}
               <button className="primary" onClick={onClose}>
@@ -205,7 +264,9 @@ export default function ExportDialog({
         )}
         {phase === "failed" && (
           <>
-            <p className="warn">Export failed:</p>
+            <p className="warn" role="alert">
+              Export failed:
+            </p>
             <pre className="error-box">{error}</pre>
             <div className="row right">
               <button onClick={() => setPhase("setup")}>Back</button>

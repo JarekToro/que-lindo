@@ -72,13 +72,19 @@ export default function FontPicker({
     <div className="vrow">
       <span className="vlabel">{label}</span>
       <span className="font-picker">
-        <button title="Previous font" onClick={() => step(-1)} disabled={index <= 0}>
+        <button
+          title="Previous font"
+          aria-label="Previous font"
+          onClick={() => step(-1)}
+          disabled={index <= 0}
+        >
           ◀
         </button>
         <button
           className="font-current"
           aria-haspopup="listbox"
           aria-expanded={open}
+          aria-label={`${label}: ${value ?? "theme default"}`}
           title="Browse fonts — arrow keys preview live, Enter keeps, Esc reverts"
           onClick={() => (open ? close(true) : openList())}
           onKeyDown={(e) => {
@@ -90,7 +96,12 @@ export default function FontPicker({
         >
           {value ?? "(theme default)"}
         </button>
-        <button title="Next font" onClick={() => step(1)} disabled={index >= options.length - 1}>
+        <button
+          title="Next font"
+          aria-label="Next font"
+          onClick={() => step(1)}
+          disabled={index >= options.length - 1}
+        >
           ▶
         </button>
         {open && (

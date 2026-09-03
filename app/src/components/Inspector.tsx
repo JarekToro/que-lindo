@@ -34,7 +34,7 @@ export default function Inspector() {
 
   if (!slide) {
     return (
-      <aside className="inspector">
+      <aside className="inspector" aria-label="Inspector">
         <p className="hint">No slide selected</p>
         <ProjectValues />
       </aside>
@@ -58,7 +58,7 @@ export default function Inspector() {
       : null;
 
   return (
-    <aside className="inspector">
+    <aside className="inspector" aria-label="Inspector">
       <MemberStrip slide={slide} index={index} thumbFor={thumbFor} />
       <div className="scope">
         <div className="scope-head">
@@ -69,6 +69,7 @@ export default function Inspector() {
           <button
             className="ghost"
             title="Play just this slide, from its start"
+            aria-label={`Play slide ${index + 1} from its start`}
             onClick={() => playSlide(index)}
           >
             ▶ Slide

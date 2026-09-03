@@ -1,6 +1,7 @@
 // Field primitives for the Values pane — the precision layer's controls.
 // All are controlled and store-free: value in, patch out.
 
+import { useId } from "react";
 import type { ReactNode } from "react";
 import type { Anchor } from "../../types";
 
@@ -77,20 +78,26 @@ export function SliderField({
   display?: NumDisplay;
   typeMax?: number;
 }) {
+  const id = useId();
   return (
     <div className="vrow">
-      <span className="vlabel">{label}</span>
+      <label className="vlabel" htmlFor={id}>
+        {label}
+      </label>
       <input
+        id={id}
         type="range"
         value={value}
         min={min}
         max={max}
         step={step}
+        aria-valuetext={`${toShown(value, display)}${UNIT[display]}`}
         onChange={(e) => onChange(parseFloat(e.target.value))}
       />
       <span className="num-unit readout">
         <input
           type="number"
+          aria-label={`${label} value`}
           value={toShown(value, display)}
           onChange={(e) => {
             const n = parseFloat(e.target.value);
@@ -125,6 +132,8 @@ export function Segmented<T extends string>({
             key={o.value}
             className={value === o.value ? "on" : ""}
             title={o.title}
+            aria-label={o.title}
+            aria-pressed={value === o.value}
             onClick={() => onChange(o.value)}
           >
             {o.label}
@@ -148,7 +157,14 @@ export function SegmentedToggles({
       <span className="vlabel">{label}</span>
       <span className="segmented" role="group" aria-label={label}>
         {options.map((o, i) => (
-          <button key={i} className={o.active ? "on" : ""} title={o.title} onClick={o.onToggle}>
+          <button
+            key={i}
+            className={o.active ? "on" : ""}
+            title={o.title}
+            aria-label={o.title}
+            aria-pressed={o.active}
+            onClick={o.onToggle}
+          >
             {o.label}
           </button>
         ))}
@@ -172,7 +188,9 @@ export function ColorField({
       <span className="vlabel">{label}</span>
       <span className="color-field">
         <input type="color" value={value.slice(0, 7)} onChange={(e) => onChange(e.target.value)} />
-        <span className="hex">{value.slice(0, 7)}</span>
+        <span className="hex" aria-hidden="true">
+          {value.slice(0, 7)}
+        </span>
       </span>
     </label>
   );
@@ -194,15 +212,20 @@ export function AnchorGrid({
   return (
     <div className="vrow">
       <span className="vlabel">Position</span>
-      <span className="anchor-grid">
-        {ANCHORS.map((a) => (
-          <button
-            key={a}
-            className={value === a ? "on" : ""}
-            title={a.replace("_", " ")}
-            onClick={() => onChange(a)}
-          />
-        ))}
+      <span className="anchor-grid" role="group" aria-label="Position">
+        {ANCHORS.map((a) => {
+          const name = a.replace("_", " ");
+          return (
+            <button
+              key={a}
+              className={value === a ? "on" : ""}
+              title={name}
+              aria-label={name}
+              aria-pressed={value === a}
+              onClick={() => onChange(a)}
+            />
+          );
+        })}
       </span>
     </div>
   );
@@ -242,9 +265,12 @@ export function EchoRow({ label, value }: { label: string; value: string }) {
 
 /** Uppercase group label for a cluster of rows. */
 export function VGroup({ label, children }: { label: string; children: ReactNode }) {
+  const id = useId();
   return (
-    <div className="vgroup">
-      <span className="vgroup-label">{label}</span>
+    <div className="vgroup" role="group" aria-labelledby={id}>
+      <span className="vgroup-label" id={id}>
+        {label}
+      </span>
       {children}
     </div>
   );
