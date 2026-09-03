@@ -40,6 +40,14 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(v, hi));
 }
 
+/** A built cell prefers Smart fit whenever the photo has detected faces —
+ * the fill crop then slides to keep them in frame instead of centering. */
+function builtCell(m: ImportedMedia, index = 0): Cell {
+  const cell = cellFor(m, index);
+  if (m.info.is_image && m.focusRect) cell.fit = "smart";
+  return cell;
+}
+
 /**
  * Dated media sorts by capture time; undated media never moves. Each undated
  * file keeps the bin slot it arrived in and the dated ones, in time order,
@@ -117,7 +125,7 @@ function soloSlide(m: ImportedMedia, index: number, settings: Settings): Slide {
       cells: [cellFor(m)],
     });
   }
-  const slide = defaultSlide({ duration: SINGLE_SECONDS, cells: [cellFor(m, index)] });
+  const slide = defaultSlide({ duration: SINGLE_SECONDS, cells: [builtCell(m, index)] });
   // A tall photo in a wide frame stands over its own blur rather than being
   // cropped to a strip. In a vertical or square frame it already fills, so it
   // gets the plain cover-and-drift treatment instead.
@@ -136,7 +144,7 @@ function soloSlide(m: ImportedMedia, index: number, settings: Settings): Slide {
  * repeating one look. Motion stays off: several photos drifting at once is
  * noise, not movement. */
 function groupSlide(run: readonly ImportedMedia[], ordinal: number, bin: MediaItem[]): Slide {
-  const cells: Cell[] = run.map((m): Cell => ({ ...cellFor(m), motion: { type: "none" } }));
+  const cells: Cell[] = run.map((m): Cell => ({ ...builtCell(m), motion: { type: "none" } }));
   const slide = defaultSlide({
     duration: GROUP_SECONDS,
     cells,
