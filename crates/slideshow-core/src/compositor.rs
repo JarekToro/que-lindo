@@ -166,7 +166,13 @@ impl Renderer {
         for overlay in &slide.texts {
             let opacity =
                 if reveal_texts { 1.0 } else { overlay.opacity_at(local_t, slide.duration) };
-            self.text.draw_overlay(&mut self.ctx, overlay, opacity, project.settings.text_margin);
+            self.text.draw_overlay(
+                &mut self.ctx,
+                &mut self.resources,
+                overlay,
+                opacity,
+                project.settings.text_margin,
+            );
         }
 
         let mut pm = Pixmap::new(w as u16, h as u16);

@@ -1,15 +1,11 @@
-//! Text overlay rendering via cosmic-text (shaping, wrapping, system fonts).
-//! Glyphs are rasterized into a tight scratch pixmap which is composited
-//! into the frame's render context as an image, so overlays keep their
-//! draw order relative to everything else in the scene.
+//! Text overlay rendering: cosmic-text shapes, wraps, and positions glyphs
+//! (system fonts, fallback, BiDi); vello_cpu's glyph pipeline rasterizes
+//! them directly into the scene with hinting and an atlas cache.
 
 use crate::model::{Align, Color, TextOverlay, TextRole};
-use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Style, SwashCache, Weight};
-use std::sync::Arc;
+use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Style, Weight};
 use vello_cpu::color::AlphaColor;
-use vello_cpu::kurbo::Affine;
-use vello_cpu::peniko::{Extend, ImageQuality, ImageSampler};
-use vello_cpu::{Image, ImageSource, Pixmap, RenderContext};
+use vello_cpu::{Glyph, RenderContext, Resources};
 
 const CRIMSON_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/CrimsonText-Regular.ttf");
 const CRIMSON_SEMIBOLD: &[u8] = include_bytes!("../../../assets/fonts/CrimsonText-SemiBold.ttf");
@@ -22,7 +18,13 @@ pub const SANS_FAMILY: &str = "Lato";
 
 pub struct TextRenderer {
     font_system: FontSystem,
-    swash: SwashCache,
+}
+
+/// Glyphs sharing one font face, positioned relative to the overlay origin.
+struct GlyphGroup {
+    font: cosmic_text::PenikoFont,
+    font_size: f32,
+    glyphs: Vec<Glyph>,
 }
 
 impl TextRenderer {
@@ -32,7 +34,7 @@ impl TextRenderer {
         for data in [CRIMSON_REGULAR, CRIMSON_SEMIBOLD, CRIMSON_ITALIC, LATO_REGULAR, LATO_BOLD] {
             db.load_font_data(data.to_vec());
         }
-        Self { font_system, swash: SwashCache::new() }
+        Self { font_system }
     }
 
     pub fn font_families(&self) -> Vec<String> {
@@ -56,6 +58,7 @@ impl TextRenderer {
     pub fn draw_overlay(
         &mut self,
         ctx: &mut RenderContext,
+        resources: &mut Resources,
         overlay: &TextOverlay,
         opacity: f32,
         text_margin: f32,
@@ -143,95 +146,65 @@ impl TextRenderer {
             }
         }
 
-        let shadow_off = (font_size * 0.045).max(1.0);
-        // Tight scratch buffer around the glyphs (padded for overshoot and
-        // the shadow offset), blitted on the CPU exactly as before, then
-        // composited into the scene as an image at integer offsets.
-        let pad = (font_size * 0.6).ceil() + 2.0;
-        let left = (origin_x + min_x - pad).floor();
-        let top = (origin_y - pad).floor();
-        let right = (origin_x + max_x + pad + shadow_off).ceil();
-        let bottom = (origin_y + text_h + pad + shadow_off).ceil();
-        let bw = ((right - left) as i64).clamp(1, u16::MAX as i64) as u16;
-        let bh = ((bottom - top) as i64).clamp(1, u16::MAX as i64) as u16;
-        let mut scratch = Pixmap::new(bw, bh);
-        let local_x = origin_x - left as f32;
-        let local_y = origin_y - top as f32;
-
-        // Drop shadow: same text, offset, translucent black.
-        if overlay.shadow {
-            let shadow_color = Color::from_rgba(0, 0, 0, (160.0 * opacity) as u8);
-            self.blit_buffer(
-                &mut scratch,
-                &mut buffer,
-                local_x + shadow_off,
-                local_y + shadow_off,
-                shadow_color,
-                opacity * 0.75,
-            );
-        }
-        self.blit_buffer(&mut scratch, &mut buffer, local_x, local_y, overlay.color, opacity);
-
-        ctx.set_paint(Image {
-            image: ImageSource::Pixmap(Arc::new(scratch)),
-            sampler: ImageSampler {
-                x_extend: Extend::Pad,
-                y_extend: Extend::Pad,
-                quality: ImageQuality::Low, // nearest: 1:1 pixel copy
-                alpha: 1.0,
-            },
-        });
-        ctx.set_paint_transform(Affine::translate((left as f64, top as f64)));
-        ctx.fill_rect(&vello_cpu::kurbo::Rect::new(
-            left as f64,
-            top as f64,
-            left as f64 + bw as f64,
-            top as f64 + bh as f64,
-        ));
-        ctx.reset_paint_transform();
-    }
-
-    fn blit_buffer(
-        &mut self,
-        pixmap: &mut Pixmap,
-        buffer: &mut Buffer,
-        origin_x: f32,
-        origin_y: f32,
-        color: Color,
-        opacity: f32,
-    ) {
-        let pw = pixmap.width() as i32;
-        let ph = pixmap.height() as i32;
-        let base = cosmic_text::Color::rgba(color.r, color.g, color.b, color.a);
-        let data = pixmap.data_as_u8_slice_mut();
-        buffer.draw(&mut self.font_system, &mut self.swash, base, |x, y, w, h, c| {
-            let a = (c.a() as f32 * opacity) as u32;
-            if a == 0 {
-                return;
-            }
-            for dy in 0..h as i32 {
-                let py = y + dy + origin_y as i32;
-                if py < 0 || py >= ph {
-                    continue;
-                }
-                for dx in 0..w as i32 {
-                    let px = x + dx + origin_x as i32;
-                    if px < 0 || px >= pw {
+        // Collect baseline-positioned glyphs, grouped per font face (fallback
+        // may mix faces within a line).
+        let mut groups: Vec<GlyphGroup> = Vec::new();
+        let mut last_font: Option<(cosmic_text::fontdb::ID, u16)> = None;
+        for run in buffer.layout_runs() {
+            for g in run.glyphs.iter() {
+                let glyph = Glyph {
+                    id: g.glyph_id as u32,
+                    x: origin_x + g.x + g.font_size * g.x_offset,
+                    y: origin_y + run.line_y + g.y - g.font_size * g.y_offset,
+                };
+                let key = (g.font_id, g.font_weight.0);
+                if last_font != Some(key) || groups.is_empty() {
+                    let Some(font) = self.font_system.get_font(g.font_id, g.font_weight) else {
                         continue;
-                    }
-                    let idx = ((py * pw + px) * 4) as usize;
-                    // Source premultiplied by alpha, then src-over.
-                    let sr = c.r() as u32 * a / 255;
-                    let sg = c.g() as u32 * a / 255;
-                    let sb = c.b() as u32 * a / 255;
-                    let inv = 255 - a;
-                    data[idx] = (sr + data[idx] as u32 * inv / 255) as u8;
-                    data[idx + 1] = (sg + data[idx + 1] as u32 * inv / 255) as u8;
-                    data[idx + 2] = (sb + data[idx + 2] as u32 * inv / 255) as u8;
-                    data[idx + 3] = (a + data[idx + 3] as u32 * inv / 255) as u8;
+                    };
+                    groups.push(GlyphGroup {
+                        font: font.as_peniko(),
+                        font_size: g.font_size,
+                        glyphs: Vec::new(),
+                    });
+                    last_font = Some(key);
                 }
+                groups.last_mut().expect("pushed above").glyphs.push(glyph);
             }
-        });
+        }
+
+        // Drop shadow: same glyphs, offset, translucent black (the alpha
+        // curve matches the old rasterizer: 160·opacity · 0.75·opacity).
+        if overlay.shadow {
+            let off = (font_size * 0.045).max(1.0);
+            let a = (160.0 * opacity * 0.75 * opacity).clamp(0.0, 255.0) as u8;
+            ctx.set_paint(AlphaColor::from_rgba8(0, 0, 0, a));
+            for group in &groups {
+                ctx.glyph_run(resources, &group.font)
+                    .font_size(group.font_size)
+                    .hint(true)
+                    .fill_glyphs(
+                        group
+                            .glyphs
+                            .iter()
+                            .map(|g| Glyph { id: g.id, x: g.x + off, y: g.y + off }),
+                    );
+            }
+        }
+
+        let c = overlay.color;
+        ctx.set_paint(AlphaColor::from_rgba8(
+            c.r,
+            c.g,
+            c.b,
+            (c.a as f32 * opacity) as u8,
+        ));
+        for group in &groups {
+            ctx.glyph_run(resources, &group.font)
+                .font_size(group.font_size)
+                .hint(true)
+                .fill_glyphs(group.glyphs.iter().copied());
+        }
     }
 }
 
@@ -252,14 +225,14 @@ pub fn default_family(role: TextRole) -> &'static str {
 mod tests {
     use super::*;
     use crate::model::TextOverlay;
-    use vello_cpu::{RenderSettings, Resources};
+    use vello_cpu::{Pixmap, RenderSettings};
 
     fn render(tr: &mut TextRenderer, overlay: &TextOverlay, w: u16, h: u16) -> Pixmap {
         let settings = RenderSettings::default();
         let mut ctx = RenderContext::new_with(w, h, settings);
-        tr.draw_overlay(&mut ctx, overlay, 1.0, 0.0);
-        let mut pm = Pixmap::new(w, h);
         let mut resources = Resources::default();
+        tr.draw_overlay(&mut ctx, &mut resources, overlay, 1.0, 0.0);
+        let mut pm = Pixmap::new(w, h);
         ctx.flush();
         ctx.render(&mut pm, &mut resources);
         pm
