@@ -4,7 +4,7 @@
 
 import { useState } from "react";
 import { detectFocus } from "../../api";
-import { layoutOptions, scatterState, smartScatterPatch } from "../../layouts";
+import { plainScatterPatch, scatterState, smartScatterPatch } from "../../layouts";
 import { defaultText, lowerThird } from "../../presets";
 import { useEditor } from "../../store";
 import type { Cell, Slide, TextOverlay, TransitionKind } from "../../types";
@@ -137,11 +137,7 @@ function ScatterFacesRow({ slide, index }: { slide: Slide; index: number }) {
       value={state}
       onChange={(v) => {
         const patch =
-          v === "smart"
-            ? smartScatterPatch(slide, media)
-            : layoutOptions(slide, media)
-                .find((o) => o.key === "scatter")
-                ?.apply(slide);
+          v === "smart" ? smartScatterPatch(slide, media) : plainScatterPatch(slide);
         if (patch) updateSlide(index, patch);
       }}
     />
