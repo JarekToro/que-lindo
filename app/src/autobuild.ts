@@ -113,6 +113,23 @@ export function faceAwareWindow(a: number | null, b: number | null): number {
 export const EMBED_JOIN = 0.73;
 export const EMBED_REJECT = 0.69;
 
+/** Identity rescue: "the same person appears in both, and the scenes aren't
+ * alien to each other" joins even when the scene band alone wouldn't — the
+ * signal that finally groups the same face across different rooms and
+ * decades. Floors calibrated with the scene bands on the owner-labeled set. */
+export const FACE_MATCH = 0.65;
+export const FACE_SCENE_FLOOR = 0.58;
+
+/** Best cross-set face match between two photos' identity embeddings. */
+export function bestFaceMatch(
+  a: readonly (readonly number[])[],
+  b: readonly (readonly number[])[],
+): number {
+  let best = 0;
+  for (const x of a) for (const y of b) best = Math.max(best, embeddingSimilarity(x, y));
+  return best;
+}
+
 /** Cosine similarity of two L2-normalized embeddings. */
 export function embeddingSimilarity(a: readonly number[], b: readonly number[]): number {
   if (a.length !== b.length || a.length === 0) return 0;
@@ -132,11 +149,20 @@ function joins(run: readonly ImportedMedia[], next: ImportedMedia): boolean {
     return Math.abs(next.captured_at - prev.captured_at) <= GROUP_WINDOW;
   }
   // Scene embeddings see through what tone can't: same moment from a
-  // different angle joins, same tone over different content splits. The
-  // undecided middle falls through to the cheaper signals.
+  // different angle joins, same tone over different content splits. A
+  // strong shared identity rescues pairs the scene alone would leave —
+  // the undecided middle falls through to the cheaper signals.
   if (prev.embedding && next.embedding) {
     const sim = embeddingSimilarity(prev.embedding, next.embedding);
     if (sim >= EMBED_JOIN) return true;
+    if (
+      sim >= FACE_SCENE_FLOOR &&
+      prev.faces.length > 0 &&
+      next.faces.length > 0 &&
+      bestFaceMatch(prev.faces, next.faces) >= FACE_MATCH
+    ) {
+      return true;
+    }
     if (sim < EMBED_REJECT) return false;
   }
   // Metadata gone (scans, photos stripped by sharing services): fall back to

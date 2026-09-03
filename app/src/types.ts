@@ -189,6 +189,9 @@ export interface ImportedMedia extends ProbedMedia {
   /** L2-normalized scene embedding; null when no embedding model is
    * installed (grouping then falls back to fingerprint + faces). */
   embedding: number[] | null;
+  /** Identity embedding per detected face; empty without a face model —
+   * "the same person appears in both" is the strongest join evidence. */
+  faces: number[][];
 }
 
 /**

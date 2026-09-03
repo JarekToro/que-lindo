@@ -104,6 +104,10 @@ export const isSuperseded = (e: unknown): boolean => e === "superseded";
 export const embedMedia = (path: string) =>
   invoke<number[] | null>("embed_media", { path });
 
+/** Identity embedding per detected face (L2-normalized); empty without a model. */
+export const faceEmbeddings = (path: string) =>
+  invoke<number[][]>("face_embeddings", { path });
+
 /** The photo's faces: weighted centroid + padded union region + count, or null. */
 export const detectFocus = (path: string) =>
   invoke<{
