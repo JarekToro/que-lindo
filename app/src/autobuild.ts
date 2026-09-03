@@ -86,6 +86,25 @@ export function signatureDistance(a: readonly number[], b: readonly number[]): n
   return sum / a.length;
 }
 
+/** How far the tone window flexes on face evidence. Photos of one moment
+ * hold the same people, so a matching face count buys the pair a looser
+ * tone match, and a strongly different head count (a group photo next to a
+ * portrait) all but vetoes one. Calibrated on the same real memorial set as
+ * SIGNATURE_WINDOW. */
+export function faceAwareWindow(a: number | null, b: number | null): number {
+  // Zero is "the detector saw nothing", not "nobody is there" — it misses
+  // small faces in wide group shots and blurred ones mid-dance, so zero
+  // carries no evidence either way.
+  if (a === null || b === null || a === 0 || b === 0) return SIGNATURE_WINDOW;
+  const diff = Math.abs(a - b);
+  if (diff === 0) return SIGNATURE_WINDOW + 4;
+  if (diff === 1) return SIGNATURE_WINDOW + 3;
+  // A big head-count gap involving a lone subject (portrait next to a group
+  // photo) is near-proof of different moments; between two busy frames it
+  // may just be someone stepping out of shot, so only lean, don't veto.
+  return Math.min(a, b) <= 1 ? 20 : SIGNATURE_WINDOW - 3;
+}
+
 /** Whether `next` joins the run being gathered. */
 function joins(run: readonly ImportedMedia[], next: ImportedMedia): boolean {
   if (run.length >= GROUP_SIZE) return false;
@@ -97,10 +116,11 @@ function joins(run: readonly ImportedMedia[], next: ImportedMedia): boolean {
     return Math.abs(next.captured_at - prev.captured_at) <= GROUP_WINDOW;
   }
   // Metadata gone (scans, photos stripped by sharing services): fall back to
-  // how the photos look. Neighbours whose thumbnails share tone and cast —
-  // the same roll, the same room, the same era of film — still group.
+  // how the photos look — tone and cast, with the face count as a second
+  // witness for or against "this is one moment".
   if (prev.signature && next.signature) {
-    return signatureDistance(prev.signature, next.signature) <= SIGNATURE_WINDOW;
+    const window = faceAwareWindow(prev.faceCount, next.faceCount);
+    return signatureDistance(prev.signature, next.signature) <= window;
   }
   return false;
 }

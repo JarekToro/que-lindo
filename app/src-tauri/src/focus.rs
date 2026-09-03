@@ -32,6 +32,9 @@ pub struct FocusInfo {
     /// Padded union box of every face `[x, y, w, h]`, frame fractions —
     /// what Smart fit keeps in frame.
     pub region: [f32; 4],
+    /// How many faces the detector found — a grouping signal: photos of
+    /// the same moment tend to hold the same people.
+    pub count: usize,
 }
 
 /// The photo's faces, or None when nothing is found (callers fall back to
@@ -86,6 +89,7 @@ pub fn detect_focus(path: &Path) -> Option<FocusInfo> {
     let rx1 = ((x1 + pad_x) / gw).clamp(0.0, 1.0);
     let ry1 = ((y1 + pad_y) / gh).clamp(0.0, 1.0);
     Some(FocusInfo {
+        count: faces.len(),
         point: [
             (fx / sum_w / gw).clamp(0.0, 1.0),
             (fy / sum_w / gh).clamp(0.0, 1.0),
