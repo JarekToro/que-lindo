@@ -184,6 +184,8 @@ export interface ImportedMedia extends ProbedMedia {
    * visual fingerprint so scans and stripped-EXIF photos can still be
    * grouped by look. Null until the thumbnail has been read. */
   signature: number[] | null;
+  /** How many faces the detector saw; null = detection didn't run. */
+  faceCount: number | null;
 }
 
 /**

@@ -110,12 +110,24 @@ export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
         });
         const thumb = await mediaThumb(probed);
         // Aim zoom defaults at faces; failures just mean a centered zoom.
-        const det = probed.info.is_image ? await detectFocus(path).catch(() => null) : null;
-        const focus = det?.point ?? null;
-        const focusRect = det?.region ?? null;
+        // A run that found nothing still counts as zero faces — that absence
+        // is a grouping signal; only a failed run leaves the count unknown.
+        let focus: [number, number] | null = null;
+        let focusRect: [number, number, number, number] | null = null;
+        let faceCount: number | null = null;
+        if (probed.info.is_image) {
+          try {
+            const det = await detectFocus(path);
+            faceCount = det?.count ?? 0;
+            focus = det?.point ?? null;
+            focusRect = det?.region ?? null;
+          } catch {
+            faceCount = null;
+          }
+        }
         const signature = thumb ? await thumbSignature(thumb).catch(() => null) : null;
-        useEditor.getState().setThumb(path, thumb, focus, focusRect, signature);
-        done[slot] = { ...probed, thumb, focus, focusRect, signature };
+        useEditor.getState().setThumb(path, thumb, focus, focusRect, signature, faceCount);
+        done[slot] = { ...probed, thumb, focus, focusRect, signature, faceCount };
       } catch (e) {
         console.error("import failed", path, e);
         useEditor.getState().finishImport(path, { error: String(e) });
