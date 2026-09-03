@@ -408,6 +408,70 @@ fn reveal_path(path: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// How deep `search_media_folder` descends below the folder it was given.
+const SEARCH_MAX_DEPTH: usize = 6;
+
+#[derive(Serialize)]
+struct FolderSearch {
+    /// File name -> the path found for it.
+    matches: std::collections::HashMap<String, String>,
+    /// Names that turned up more than once; the shallowest match won.
+    ambiguous: Vec<String>,
+}
+
+/// Of the paths given, the ones that are gone from disk — what separates a
+/// moved/renamed file (relinkable) from a probe that failed for some other
+/// reason (a corrupt file, a missing ffmpeg).
+#[tauri::command]
+fn missing_paths(paths: Vec<String>) -> Vec<String> {
+    paths.into_iter().filter(|p| !Path::new(p).is_file()).collect()
+}
+
+/// Hunt a folder tree for files with the given names (relinking a whole moved
+/// library at once). Breadth-first so the shallowest match wins, bounded in
+/// depth, hidden directories skipped. `file_type` does not follow symlinks, so
+/// linked directories are never descended into and cannot cycle.
+#[tauri::command]
+async fn search_media_folder(dir: String, names: Vec<String>) -> Result<FolderSearch, String> {
+    use std::collections::{HashMap, HashSet, VecDeque};
+    tauri::async_runtime::spawn_blocking(move || {
+        let wanted: HashSet<String> = names.into_iter().collect();
+        let mut matches: HashMap<String, String> = HashMap::new();
+        let mut ambiguous: Vec<String> = Vec::new();
+        let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from([(PathBuf::from(&dir), 0usize)]);
+        while let Some((d, depth)) = queue.pop_front() {
+            let Ok(entries) = std::fs::read_dir(&d) else { continue };
+            // Sorted so a folder with several copies relinks the same way twice.
+            let mut entries: Vec<_> = entries.flatten().collect();
+            entries.sort_by_key(|e| e.file_name());
+            for entry in entries {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with('.') {
+                    continue;
+                }
+                let Ok(kind) = entry.file_type() else { continue };
+                if kind.is_dir() {
+                    if depth < SEARCH_MAX_DEPTH {
+                        queue.push_back((entry.path(), depth + 1));
+                    }
+                } else if kind.is_file() && wanted.contains(&name) {
+                    if matches.contains_key(&name) {
+                        if !ambiguous.contains(&name) {
+                            ambiguous.push(name);
+                        }
+                    } else {
+                        matches.insert(name, entry.path().display().to_string());
+                    }
+                }
+            }
+        }
+        ambiguous.sort();
+        Ok(FolderSearch { matches, ambiguous })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
@@ -471,6 +535,8 @@ pub fn run() {
             export_video,
             cancel_export,
             reveal_path,
+            missing_paths,
+            search_media_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
