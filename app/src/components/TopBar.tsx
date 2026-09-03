@@ -16,9 +16,13 @@ const RESOLUTIONS: { label: string; w: number; h: number }[] = [
 
 export default function TopBar({
   ffmpeg,
+  missingCount,
+  onRelink,
   onExport,
 }: {
   ffmpeg: FfmpegStatus | null;
+  missingCount: number;
+  onRelink: () => void;
   onExport: () => void;
 }) {
   const project = useEditor((s) => s.project);
@@ -134,6 +138,11 @@ export default function TopBar({
             </button>
           </div>
         </div>
+        {missingCount > 0 && (
+          <button className="warn-chip" onClick={onRelink} title="Relink files that moved on disk">
+            ⚠ {missingCount} missing file{missingCount === 1 ? "" : "s"}
+          </button>
+        )}
         {ffmpeg && !ffmpeg.found && (
           <span className="warn" title={ffmpeg.error ?? undefined}>
             ⚠ ffmpeg missing

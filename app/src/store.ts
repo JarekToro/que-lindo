@@ -112,6 +112,9 @@ export interface EditorState {
     focusRect?: [number, number, number, number] | null,
   ): void;
   removeMedia(path: string): void;
+  /** Repoint every reference (cells and audio) from old path to new, one undo
+   * step for the whole map. The bin entries for the old paths go with it. */
+  relinkMedia(map: Record<string, string>): void;
   setTime(t: number): void;
   setPlaying(playing: boolean): void;
   /** Audition one slide: seek to its start and play just through its end. */
@@ -286,6 +289,31 @@ export const useEditor = create<EditorState>((set, get) => ({
     for (const m of get().media)
       if (m.path === path && m.status === "ready" && m.thumb) URL.revokeObjectURL(m.thumb);
     set({ media: get().media.filter((m) => m.path !== path) });
+  },
+
+  relinkMedia(map) {
+    const remap = new Map(Object.entries(map).filter(([from, to]) => from !== to));
+    if (!remap.size) return;
+    get().mutate((p) => ({
+      ...p,
+      slides: p.slides.map((s) => ({
+        ...s,
+        cells: s.cells.map((c) => {
+          if (c.source.type !== "image" && c.source.type !== "video") return c;
+          const to = remap.get(c.source.path);
+          return to ? { ...c, source: { ...c.source, path: to } } : c;
+        }),
+      })),
+      audio: p.audio.map((a) => {
+        const to = remap.get(a.path);
+        return to ? { ...a, path: to } : a;
+      }),
+    }));
+    // The old bin entries have nothing left to point at; the App's re-import
+    // effect probes and thumbs the new paths.
+    for (const m of get().media)
+      if (remap.has(m.path) && m.status === "ready" && m.thumb) URL.revokeObjectURL(m.thumb);
+    set({ media: get().media.filter((m) => !remap.has(m.path)) });
   },
 
   setTime(t) {

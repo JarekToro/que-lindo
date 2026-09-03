@@ -63,6 +63,9 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 .topbar-title { color: var(--muted); }
 .brand { font-weight: 700; color: var(--accent); margin-right: 8px; }
 .warn { color: var(--danger); }
+/* A warning that is also the way to fix it (missing media). */
+.warn-chip { color: var(--danger); border-color: var(--danger); background: transparent; }
+.warn-chip:hover { border-color: var(--danger); background: var(--panel-2); }
 
 .shell { display: flex; flex: 1; min-height: 0; min-width: 0; }
 .shell-main { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
@@ -564,6 +567,21 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 .preset-custom {
   border: 1px solid var(--line); border-radius: 6px;
   padding: 4px 10px; margin: -4px 0 10px;
+}
+.relink-list {
+  list-style: none; margin: 8px 0; padding: 0; max-height: 240px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.relink-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.relink-row:last-child { border-bottom: none; }
+.relink-file { min-width: 0; flex: 1; }
+.relink-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.relink-path {
+  color: var(--muted); font-size: 11px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .error-box {
   background: #2a1d1b; border: 1px solid var(--danger); color: #f2b9b0;
