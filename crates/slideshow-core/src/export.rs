@@ -16,15 +16,30 @@ pub struct ExportOptions {
     /// 0..1 render scale (1.0 = full project resolution).
     pub scale: f32,
     /// x264 CRF, lower = better/larger. 18 is visually lossless-ish.
+    /// Hardware encoders map this onto their own quality scale.
     pub crf: u8,
-    /// x264 speed preset.
+    /// x264 speed preset (software encoding only).
     pub preset: String,
+    /// Which H.264 encoder to use.
+    pub encoder: VideoEncoder,
 }
 
 impl Default for ExportOptions {
     fn default() -> Self {
-        Self { scale: 1.0, crf: 19, preset: "medium".into() }
+        Self { scale: 1.0, crf: 19, preset: "medium".into(), encoder: VideoEncoder::Auto }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum VideoEncoder {
+    /// Hardware (VideoToolbox) when the ffmpeg build offers it, else x264.
+    #[default]
+    Auto,
+    /// Software libx264: best quality per bit, heavy on CPU.
+    X264,
+    /// Apple VideoToolbox hardware encoder: much faster and near-zero CPU,
+    /// slightly larger files at equal quality.
+    VideoToolbox,
 }
 
 /// Cooperative cancel flag; set true to abort an export in flight.
@@ -56,7 +71,7 @@ pub fn export(
 
     // Probe one frame for the actual output dimensions at this scale.
     let first = renderer.render_frame(project, &timeline, 0.0, options.scale)?;
-    let (w, h) = (first.width(), first.height());
+    let (w, h) = (first.width() as u32, first.height() as u32);
 
     let audio_plan = audio::plan(project, &timeline, &mut renderer.cache);
 
@@ -83,11 +98,29 @@ pub fn export(
         cmd.args(["-map", "0:v", "-map", "[aout]"]);
         cmd.args(["-c:a", "aac", "-b:a", "192k"]);
     }
+    let use_videotoolbox = match options.encoder {
+        VideoEncoder::X264 => false,
+        VideoEncoder::VideoToolbox => true,
+        VideoEncoder::Auto => ffmpeg.has_encoder("h264_videotoolbox"),
+    };
+    if use_videotoolbox {
+        // VideoToolbox has no CRF; its constant-quality scale runs 1..100,
+        // higher = better. Map the familiar CRF knob onto it (19 → 62).
+        let q = (100i32 - 2 * options.crf as i32).clamp(1, 100);
+        cmd.args([
+            "-c:v", "h264_videotoolbox",
+            "-pix_fmt", "yuv420p",
+            "-q:v", &q.to_string(),
+        ]);
+    } else {
+        cmd.args([
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-crf", &options.crf.to_string(),
+            "-preset", &options.preset,
+        ]);
+    }
     cmd.args([
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        "-crf", &options.crf.to_string(),
-        "-preset", &options.preset,
         "-movflags", "+faststart",
         "-t", &format!("{:.4}", timeline.total_duration()),
     ]);
@@ -111,7 +144,7 @@ pub fn export(
             renderer.render_frame(project, &timeline, t, options.scale)?
         };
         // Frames are fully opaque, so premultiplied data == straight RGBA.
-        if let Err(e) = stdin.write_all(frame.data()) {
+        if let Err(e) = stdin.write_all(frame.data_as_u8_slice()) {
             write_err = Some(e);
             break;
         }

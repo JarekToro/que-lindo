@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use slideshow_core::export::{export, CancelFlag, ExportOptions};
+use slideshow_core::export::{export, CancelFlag, ExportOptions, VideoEncoder};
 use slideshow_core::{Ffmpeg, Project, Renderer, Timeline};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -51,6 +51,9 @@ enum Cmd {
         /// x264 preset (ultrafast..veryslow).
         #[arg(long, default_value = "medium")]
         preset: String,
+        /// H.264 encoder: auto = hardware (VideoToolbox) when available.
+        #[arg(long, value_enum, default_value_t = EncoderArg::Auto)]
+        encoder: EncoderArg,
     },
     /// Print the total duration and per-slide timing of a project.
     Info {
@@ -64,10 +67,27 @@ fn main() -> Result<()> {
         Cmd::New { dir } => cmd_new(&dir),
         Cmd::Probe { path } => cmd_probe(&path),
         Cmd::Frame { project, time, out, scale } => cmd_frame(&project, time, &out, scale),
-        Cmd::Render { project, out, scale, crf, preset } => {
-            cmd_render(&project, &out, scale, crf, preset)
+        Cmd::Render { project, out, scale, crf, preset, encoder } => {
+            cmd_render(&project, &out, scale, crf, preset, encoder.into())
         }
         Cmd::Info { project } => cmd_info(&project),
+    }
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum EncoderArg {
+    Auto,
+    X264,
+    Videotoolbox,
+}
+
+impl From<EncoderArg> for VideoEncoder {
+    fn from(e: EncoderArg) -> Self {
+        match e {
+            EncoderArg::Auto => VideoEncoder::Auto,
+            EncoderArg::X264 => VideoEncoder::X264,
+            EncoderArg::Videotoolbox => VideoEncoder::VideoToolbox,
+        }
     }
 }
 
@@ -155,16 +175,25 @@ fn cmd_frame(path: &Path, time: f64, out: &Path, scale: f32) -> Result<()> {
     let timeline = Timeline::new(&project);
     let mut renderer = renderer();
     let frame = renderer.render_frame(&project, &timeline, time, scale)?;
-    frame.save_png(out).with_context(|| format!("writing {}", out.display()))?;
-    println!("wrote {} ({}x{})", out.display(), frame.width(), frame.height());
+    let (w, h) = (frame.width(), frame.height());
+    let png = frame.into_png().context("encoding PNG")?;
+    std::fs::write(out, png).with_context(|| format!("writing {}", out.display()))?;
+    println!("wrote {} ({w}x{h})", out.display());
     Ok(())
 }
 
-fn cmd_render(path: &Path, out: &Path, scale: f32, crf: u8, preset: String) -> Result<()> {
+fn cmd_render(
+    path: &Path,
+    out: &Path,
+    scale: f32,
+    crf: u8,
+    preset: String,
+    encoder: VideoEncoder,
+) -> Result<()> {
     let project = load_project(path)?;
     check_media(&project)?;
     let mut renderer = renderer();
-    let options = ExportOptions { scale, crf, preset };
+    let options = ExportOptions { scale, crf, preset, encoder };
     let cancel: CancelFlag = Arc::new(AtomicBool::new(false));
     {
         let cancel = cancel.clone();
