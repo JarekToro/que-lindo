@@ -145,6 +145,9 @@ export interface AudioTrack {
   fade_in: number;
   fade_out: number;
   loop: boolean;
+  /** Beat marks in this track's own time base (seconds into the source file),
+   * sorted ascending. See app/src/marks.ts. */
+  markers: number[];
 }
 
 // ---- backend result types ----
