@@ -16,6 +16,7 @@ import { defaultText, lowerThird } from "../../presets";
 import { useEditor } from "../../store";
 import type { Cell, Slide, TextOverlay, TransitionKind } from "../../types";
 import { kindLabel, MOTIONS, motionLabel } from "./data";
+import Menu from "../Menu";
 import FontPicker from "./FontPicker";
 import LayoutPicker, { cellFills, layoutTileSize, TileCell } from "./LayoutPicker";
 import {
@@ -83,12 +84,25 @@ export function MemberStrip({
         const thumb = thumbFor(c);
         return (
           <span key={`c${ci}`} className={`member-chip ${selectedCell === ci ? "on" : ""}`}>
-            <button className="chip-body" title={cellName(c)} onClick={() => selectCell(ci)}>
-              {thumb ? <img src={thumb} alt="" /> : <span className="thumb-empty">▤</span>}
+            <button
+              className="chip-body"
+              title={cellName(c)}
+              aria-label={cellName(c)}
+              aria-pressed={selectedCell === ci}
+              onClick={() => selectCell(ci)}
+            >
+              {thumb ? (
+                <img src={thumb} alt="" />
+              ) : (
+                <span className="thumb-empty" aria-hidden="true">
+                  ▤
+                </span>
+              )}
             </button>
             <button
               className="chip-x"
               title="Remove from this slide"
+              aria-label={`Remove ${cellName(c)} from this slide`}
               onClick={() =>
                 updateSlide(index, { cells: slide.cells.filter((_, i) => i !== ci) })
               }
@@ -100,29 +114,38 @@ export function MemberStrip({
       })}
       {slide.texts.map((t, ti) => (
         <span key={`t${ti}`} className={`member-chip text ${selectedText === ti ? "on" : ""}`}>
-          <button className="chip-body" title={t.text || t.role} onClick={() => selectText(ti)}>
-            <span className="chip-t">T</span>
+          <button
+            className="chip-body"
+            title={t.text || t.role}
+            aria-label={`Text ${t.text.trim() || t.role}`}
+            aria-pressed={selectedText === ti}
+            onClick={() => selectText(ti)}
+          >
+            <span className="chip-t" aria-hidden="true">
+              T
+            </span>
             <span className="chip-label">{t.text.trim() ? t.text : t.role}</span>
           </button>
           <button
             className="chip-x"
             title="Remove this text"
+            aria-label={`Remove text ${t.text.trim() || t.role}`}
             onClick={() => updateSlide(index, { texts: slide.texts.filter((_, i) => i !== ti) })}
           >
             ✕
           </button>
         </span>
       ))}
-      <div className="menu">
-        <button className="chip-add" title="Add text to this slide">
-          +
-        </button>
-        <div className="menu-items">
-          <button onClick={() => addText("title")}>Title</button>
-          <button onClick={() => addText("caption")}>Caption</button>
-          <button onClick={() => addText("lower")}>Lower third</button>
-        </div>
-      </div>
+      <Menu
+        label="+"
+        ariaLabel="Add text to this slide"
+        buttonClassName="chip-add"
+        items={[
+          { label: "Title", onPick: () => addText("title") },
+          { label: "Caption", onPick: () => addText("caption") },
+          { label: "Lower third", onPick: () => addText("lower") },
+        ]}
+      />
     </div>
   );
 }
@@ -531,6 +554,7 @@ export function TextValues({
     <>
       <textarea
         rows={2}
+        aria-label="Text content"
         value={t.text}
         onChange={(e) => patch({ text: e.target.value })}
       />

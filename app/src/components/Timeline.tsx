@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { revealPath } from "../api";
 import { layoutRects } from "../layout";
 import { ensureAudioCtx, mixForRev } from "../mixcache";
@@ -302,6 +302,7 @@ export default function Timeline({
   const [cols, setCols] = useState(6);
   const [panelW, setPanelW] = useState(280);
 
+  const panelId = useId();
   const gridRef = useRef<HTMLDivElement | null>(null);
   const bandRef = useRef<HTMLDivElement | null>(null);
   const cardRefs = useRef(new Map<number, HTMLDivElement>());
@@ -697,23 +698,37 @@ export default function Timeline({
 
   // ---- context menu ----
   const [menu, setMenu] = useState<{ x: number; y: number; entries: MenuEntry[] } | null>(null);
+  /** Whatever had focus when the menu opened, so dismissing it hands focus back. */
+  const menuReturn = useRef<HTMLElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const closeMenu = useCallback((refocus: boolean) => {
+    setMenu(null);
+    if (refocus) menuReturn.current?.focus();
+  }, []);
   useEffect(() => {
     if (!menu) return;
-    const close = () => setMenu(null);
+    const onPointer = () => closeMenu(false);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") closeMenu(true);
     };
-    window.addEventListener("pointerdown", close);
+    window.addEventListener("pointerdown", onPointer);
     window.addEventListener("keydown", onKey);
     return () => {
-      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("pointerdown", onPointer);
       window.removeEventListener("keydown", onKey);
     };
+  }, [menu, closeMenu]);
+
+  // Opening hands the keyboard the first item; Escape and picking both return
+  // focus to the card the menu came from.
+  useEffect(() => {
+    if (menu) menuRef.current?.querySelector<HTMLButtonElement>("button:not([disabled])")?.focus();
   }, [menu]);
 
   const openMenu = (e: React.MouseEvent, entries: MenuEntry[]) => {
     e.preventDefault();
     e.stopPropagation();
+    menuReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setMenu({ x: Math.min(e.clientX, window.innerWidth - 230), y: Math.min(e.clientY, window.innerHeight - 200), entries });
   };
 
@@ -1161,16 +1176,25 @@ export default function Timeline({
       tabIndex={0}
       role="group"
       aria-label={`Group of ${membersOf(openGroup).length} — arrow keys walk members, delete splits one out, escape closes`}
+      aria-activedescendant={`${panelId}-m${memberFocus}`}
       onKeyDown={bandKeys}
     >
-      <div className="band-members">
+      <div className="band-members" role="listbox" aria-label="Members of this group">
         {membersOf(openGroup).map((m, j) => {
           const text = m.type === "text" ? openGroup.texts[m.index] : undefined;
           const thumb = m.type === "cell" ? cellThumb(openGroup.cells[m.index], thumbs) : null;
           return (
             <div
               key={`${m.type}-${m.index}`}
+              id={`${panelId}-m${j}`}
               data-mi={j}
+              role="option"
+              aria-selected={j === memberFocus}
+              aria-label={
+                m.type === "text"
+                  ? `Title ${text?.text.trim() || text?.role || ""}`
+                  : `Photo ${m.index + 1}`
+              }
               className={`band-member ${m.type === "text" ? "band-text" : ""} ${j === memberFocus ? "focused" : ""} ${drop?.kind === "band-member" && drop.index === j ? "reorder-target" : ""}`}
               onPointerDown={(e) => beginDrag(e, { kind: "member", slide: openIdx, member: m })}
               onPointerMove={moveDrag}
@@ -1191,7 +1215,9 @@ export default function Timeline({
             >
               {m.type === "text" ? (
                 <span className="band-text-body" style={{ fontStyle: text?.italic ? "italic" : "normal" }}>
-                  <span className="band-text-mark">T</span>
+                  <span className="band-text-mark" aria-hidden="true">
+                    T
+                  </span>
                   {text?.text.trim() ? text.text : text?.role}
                 </span>
               ) : thumb ? (
@@ -1202,6 +1228,7 @@ export default function Timeline({
               <button
                 className="member-remove"
                 title="Split into its own slide after this group"
+                aria-label={`Split ${m.type === "text" ? "this title" : `photo ${m.index + 1}`} into its own slide after this group`}
                 onClick={(e) => {
                   e.stopPropagation();
                   splitMember(openIdx, m);
@@ -1213,7 +1240,12 @@ export default function Timeline({
           );
         })}
       </div>
-      <button className="ghost band-close" title="Close (Esc)" onClick={() => setOpenGroupId(null)}>
+      <button
+        className="ghost band-close"
+        title="Close (Esc)"
+        aria-label="Close the group band"
+        onClick={() => setOpenGroupId(null)}
+      >
         Close
       </button>
     </div>
@@ -1252,7 +1284,9 @@ export default function Timeline({
         style={proportional ? (vertical ? { height: widths[i] } : { width: widths[i] }) : undefined}
         tabIndex={i === selected ? 0 : -1}
         role="option"
-        aria-selected={i === selected}
+        // The grid is multi-selectable: aria-selected tracks the whole
+        // selection, while the roving tabindex marks the anchor card.
+        aria-selected={selectedIds.includes(s.id)}
         aria-label={`Slide ${i + 1} of ${slides.length}${membersOf(s).length > 1 ? `, group of ${membersOf(s).length}` : ""}${proportional ? `, ${s.duration.toFixed(1)} seconds` : ""}`}
         data-index={i}
         onPointerDown={(e) => beginDrag(e, { kind: "slide", index: i })}
@@ -1282,6 +1316,7 @@ export default function Timeline({
           <button
             className="card-text-chip"
             title="Edit this text (opens it in the panel)"
+            aria-label={`Edit the text “${firstText.text}” on slide ${i + 1}`}
             onClick={(e) => {
               e.stopPropagation();
               selectSlide(i, false);
@@ -1300,32 +1335,35 @@ export default function Timeline({
 
   const dockToggle = (
     <div className="dock-toggle" role="group" aria-label="Timeline position">
-      {(["left", "bottom", "right", "split"] as const).map((d) => (
-        <button
-          key={d}
-          className={dock === d ? "on" : ""}
-          aria-pressed={dock === d}
-          title={
-            d === "split"
-              ? "Split view: Arrange left, Time at the bottom"
-              : `Dock timeline ${d === "bottom" ? "at the bottom" : `on the ${d}`}`
-          }
-          onClick={() => setUi({ dock: d })}
-        >
-          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-            <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" />
-            {d === "left" && <rect x="1.5" y="1.5" width="3.5" height="9" fill="currentColor" />}
-            {d === "bottom" && <rect x="1.5" y="7" width="9" height="3.5" fill="currentColor" />}
-            {d === "right" && <rect x="7" y="1.5" width="3.5" height="9" fill="currentColor" />}
-            {d === "split" && (
-              <>
-                <rect x="1.5" y="1.5" width="3.5" height="5" fill="currentColor" />
-                <rect x="1.5" y="7.5" width="9" height="3" fill="currentColor" />
-              </>
-            )}
-          </svg>
-        </button>
-      ))}
+      {(["left", "bottom", "right", "split"] as const).map((d) => {
+        const name =
+          d === "split"
+            ? "Split view: Arrange left, Time at the bottom"
+            : `Dock timeline ${d === "bottom" ? "at the bottom" : `on the ${d}`}`;
+        return (
+          <button
+            key={d}
+            className={dock === d ? "on" : ""}
+            aria-pressed={dock === d}
+            title={name}
+            aria-label={name}
+            onClick={() => setUi({ dock: d })}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <rect x="0.5" y="0.5" width="11" height="11" rx="1.5" fill="none" stroke="currentColor" />
+              {d === "left" && <rect x="1.5" y="1.5" width="3.5" height="9" fill="currentColor" />}
+              {d === "bottom" && <rect x="1.5" y="7" width="9" height="3.5" fill="currentColor" />}
+              {d === "right" && <rect x="7" y="1.5" width="3.5" height="9" fill="currentColor" />}
+              {d === "split" && (
+                <>
+                  <rect x="1.5" y="1.5" width="3.5" height="5" fill="currentColor" />
+                  <rect x="1.5" y="7.5" width="9" height="3" fill="currentColor" />
+                </>
+              )}
+            </svg>
+          </button>
+        );
+      })}
     </div>
   );
 
@@ -1333,6 +1371,7 @@ export default function Timeline({
     <button
       className="ghost"
       title={`Hide the ${face === "arrange" ? "Arrange" : "Time"} panel`}
+      aria-label={`Hide the ${face === "arrange" ? "Arrange" : "Time"} panel`}
       onClick={() =>
         setUi(face === "arrange" ? { arrangeCollapsed: true } : { timeCollapsed: true })
       }
@@ -1342,16 +1381,20 @@ export default function Timeline({
   );
 
   return (
-    <footer className={`timeline ${mode} ${face ? `face-${face}` : ""}`}>
+    // Split view renders two of these; the label keeps the two landmarks apart.
+    <footer
+      className={`timeline ${mode} ${face ? `face-${face}` : ""}`}
+      aria-label={face === "arrange" ? "Arrange panel" : face === "time" ? "Time panel" : "Timeline"}
+    >
       <div className="timeline-bar">
         {face ? (
           <span className="panel-label">{face === "arrange" ? "Arrange" : "Time"}</span>
         ) : (
-          <div className="mode-toggle" role="tablist" aria-label="Timeline mode">
-            <button role="tab" aria-selected={mode === "arrange"} className={mode === "arrange" ? "on" : ""} onClick={() => switchMode("arrange")}>
+          <div className="mode-toggle" role="group" aria-label="Timeline mode">
+            <button aria-pressed={mode === "arrange"} className={mode === "arrange" ? "on" : ""} onClick={() => switchMode("arrange")}>
               Arrange
             </button>
-            <button role="tab" aria-selected={mode === "time"} className={mode === "time" ? "on" : ""} onClick={() => switchMode("time")}>
+            <button aria-pressed={mode === "time"} className={mode === "time" ? "on" : ""} onClick={() => switchMode("time")}>
               Time
             </button>
           </div>
@@ -1388,6 +1431,7 @@ export default function Timeline({
             <button
               className={`ghost ${shelfOpen ? "on" : ""}`}
               aria-expanded={shelfOpen}
+              aria-controls={`${panelId}-shelf`}
               onClick={() => setShelfOpen(!shelfOpen)}
             >
               Not used ({unused.length})
@@ -1403,6 +1447,7 @@ export default function Timeline({
           ref={gridRef}
           className="arrange-grid"
           role="listbox"
+          aria-multiselectable="true"
           aria-label="Slides in playback order"
           onKeyDown={gridKeys}
         >
@@ -1421,15 +1466,20 @@ export default function Timeline({
           }}
           className={`time-strip ${vertical ? "vertical" : ""}`}
           role="listbox"
+          aria-multiselectable="true"
           aria-label={`Slides on the clock — card ${vertical ? "height" : "width"} is duration`}
           onKeyDown={gridKeys}
         >
           <div
             className="time-content"
+            role="presentation"
             style={vertical ? { height: contentW } : { width: contentW }}
           >
             <div
               className="time-ruler"
+              // A mouse-only scrub surface; the transport slider is the
+              // keyboard's way to the same playhead.
+              aria-hidden="true"
               onPointerDown={(e) => {
                 setPlaying(false);
                 seekAt(e);
@@ -1453,10 +1503,13 @@ export default function Timeline({
                 </span>
               ))}
             </div>
-            <div className="time-row">{cards}</div>
+            <div className="time-row" role="presentation">
+              {cards}
+            </div>
             <div className="audio-lane">
               <canvas
                 ref={laneRef}
+                role="img"
                 aria-label="Music waveform"
                 style={vertical ? { height: contentW } : { width: contentW }}
               />
@@ -1464,27 +1517,30 @@ export default function Timeline({
                 <span className="hint lane-hint">No music yet — add a track from “Not used”.</span>
               )}
             </div>
-            {slides.map(
-              (s, i) =>
-                s.transition.kind.type !== "cut" && (
-                  <button
-                    key={`seam-${s.id}`}
-                    className="seam-marker"
-                    style={vertical ? { top: lefts[i] } : { left: lefts[i] }}
-                    title={`${i === 0 ? "Opens with" : TRANSITION_NAMES[s.transition.kind.type] ?? "Transition"}${i === 0 ? ` (${TRANSITION_NAMES[s.transition.kind.type]?.toLowerCase() ?? "fade"})` : ""} · ${s.transition.duration.toFixed(1)}s`}
-                    onClick={() => selectSlide(i)}
-                  >
-                    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-                      <path d="M5 0 L10 5 L5 10 L0 5 Z" fill="currentColor" />
-                    </svg>
-                  </button>
-                ),
-            )}
+            {slides.map((s, i) => {
+              if (s.transition.kind.type === "cut") return null;
+              const seam = `${i === 0 ? "Opens with" : TRANSITION_NAMES[s.transition.kind.type] ?? "Transition"}${i === 0 ? ` (${TRANSITION_NAMES[s.transition.kind.type]?.toLowerCase() ?? "fade"})` : ""} · ${s.transition.duration.toFixed(1)}s`;
+              return (
+                <button
+                  key={`seam-${s.id}`}
+                  className="seam-marker"
+                  style={vertical ? { top: lefts[i] } : { left: lefts[i] }}
+                  title={seam}
+                  aria-label={`Slide ${i + 1} seam — ${seam}`}
+                  onClick={() => selectSlide(i)}
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                    <path d="M5 0 L10 5 L5 10 L0 5 Z" fill="currentColor" />
+                  </svg>
+                </button>
+              );
+            })}
             {project.outro.kind.type !== "cut" && total > 0 && (
               <button
                 className="seam-marker"
                 style={vertical ? { top: total * PX_PER_SEC } : { left: total * PX_PER_SEC }}
                 title={`Ends with ${TRANSITION_NAMES[project.outro.kind.type]?.toLowerCase() ?? "a fade"} · ${project.outro.duration.toFixed(1)}s`}
+                aria-label={`Final seam — ends with ${TRANSITION_NAMES[project.outro.kind.type]?.toLowerCase() ?? "a fade"}, ${project.outro.duration.toFixed(1)} seconds`}
                 onClick={() => selectSlide(slides.length - 1)}
               >
                 <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
@@ -1502,48 +1558,63 @@ export default function Timeline({
       )}
 
       {face !== "time" && shelfOpen && unused.length > 0 && (
-        <div className={`shelf ${shelfHot ? "drop-hot" : ""}`} aria-label="Not used">
-          {unused.map((m) => (
-            <div
-              key={m.path}
-              className="shelf-item"
-              title={m.path}
-              onPointerDown={(e) => {
-                if (m.status === "ready") beginDrag(e, { kind: "media", path: m.path });
-              }}
-              onPointerMove={moveDrag}
-              onPointerUp={endDrag}
-              onContextMenu={(e) => shelfMenu(e, m)}
-            >
-              {m.status === "ready" && m.thumb ? (
-                <img src={m.thumb} alt="" draggable={false} />
-              ) : (
-                <span className="thumb-empty">
-                  {m.status === "pending" ? "⋯" : m.status === "error" ? "!" : "♫"}
-                </span>
-              )}
-              <span className="shelf-name">{m.path.replace(/^.*[/\\]/, "")}</span>
-              {m.status === "ready" && (m.info.is_image || m.info.has_video) && (
+        <div
+          id={`${panelId}-shelf`}
+          className={`shelf ${shelfHot ? "drop-hot" : ""}`}
+          role="group"
+          aria-label="Not used"
+        >
+          {unused.map((m) => {
+            const name = m.path.replace(/^.*[/\\]/, "");
+            return (
+              <div
+                key={m.path}
+                className="shelf-item"
+                title={m.path}
+                onPointerDown={(e) => {
+                  if (m.status === "ready") beginDrag(e, { kind: "media", path: m.path });
+                }}
+                onPointerMove={moveDrag}
+                onPointerUp={endDrag}
+                onContextMenu={(e) => shelfMenu(e, m)}
+              >
+                {m.status === "ready" && m.thumb ? (
+                  <img src={m.thumb} alt="" draggable={false} />
+                ) : (
+                  <span className="thumb-empty">
+                    {m.status === "pending" ? "⋯" : m.status === "error" ? "!" : "♫"}
+                  </span>
+                )}
+                <span className="shelf-name">{name}</span>
+                {m.status === "ready" && (m.info.is_image || m.info.has_video) && (
+                  <button
+                    title="Add to the timeline as a slide"
+                    aria-label={`Add ${name} to the timeline as a slide`}
+                    onClick={() => insertSlides(slides.length, [slideForMedia(m)])}
+                  >
+                    + Slide
+                  </button>
+                )}
+                {m.status === "ready" && m.info.has_audio && !m.info.has_video && (
+                  <button
+                    title="Add as a music track"
+                    aria-label={`Add ${name} as a music track`}
+                    onClick={() => mutate((p) => ({ ...p, audio: [...p.audio, audioTrackFor(m)] }))}
+                  >
+                    + Music
+                  </button>
+                )}
                 <button
-                  title="Add to the timeline as a slide"
-                  onClick={() => insertSlides(slides.length, [slideForMedia(m)])}
+                  className="ghost"
+                  title="Remove from the project"
+                  aria-label={`Remove ${name} from the project`}
+                  onClick={() => removeMedia(m.path)}
                 >
-                  + Slide
+                  ✕
                 </button>
-              )}
-              {m.status === "ready" && m.info.has_audio && !m.info.has_video && (
-                <button
-                  title="Add as a music track"
-                  onClick={() => mutate((p) => ({ ...p, audio: [...p.audio, audioTrackFor(m)] }))}
-                >
-                  + Music
-                </button>
-              )}
-              <button className="ghost" title="Remove from the project" onClick={() => removeMedia(m.path)}>
-                ✕
-              </button>
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -1557,7 +1628,18 @@ export default function Timeline({
         <div
           className="context-menu"
           role="menu"
+          aria-label="Slide actions"
           style={{ left: menu.x, top: menu.y }}
+          ref={menuRef}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+            e.preventDefault();
+            const all = [
+              ...e.currentTarget.querySelectorAll<HTMLButtonElement>("button:not([disabled])"),
+            ];
+            const at = all.indexOf(document.activeElement as HTMLButtonElement);
+            all[Math.max(0, Math.min(all.length - 1, at + (e.key === "ArrowDown" ? 1 : -1)))]?.focus();
+          }}
           onPointerDown={(e) => e.stopPropagation()}
         >
           {menu.entries.map((entry, k) =>
@@ -1569,7 +1651,7 @@ export default function Timeline({
                 role="menuitem"
                 disabled={entry.disabled}
                 onClick={() => {
-                  setMenu(null);
+                  closeMenu(true);
                   entry.onPick();
                 }}
               >
