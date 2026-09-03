@@ -693,6 +693,11 @@ export default function Timeline({
   /** Everything the builder can draw on, in bin order. */
   const buildable = useMemo(() => buildableMedia(media), [media]);
   const buildCount = buildable.filter((m) => m.info.is_image || m.info.has_video).length;
+  // Fingerprints ride in with thumbnails, and look-alike grouping needs
+  // them — building mid-import would silently group nothing.
+  const stillFingerprinting =
+    media.some((m) => m.status === "pending") ||
+    buildable.some((m) => m.info.is_image && m.thumb === null);
 
   /** Lay the bin out as a finished film. One mutate, so one undo puts the
    * previous arrangement back. */
@@ -1589,11 +1594,13 @@ export default function Timeline({
             <button
               className={suggestBuild ? "primary" : ""}
               onClick={startBuild}
-              disabled={buildCount === 0}
+              disabled={buildCount === 0 || stillFingerprinting}
               title={
                 buildCount === 0
                   ? "Import photos or clips first"
-                  : "Lay out the whole bin: ordered by when the shots were taken, moments collaged, pacing and motion chosen"
+                  : stillFingerprinting
+                    ? "Still reading the photos — ready in a moment"
+                    : "Lay out the whole bin: ordered by when the shots were taken, moments collaged, pacing and motion chosen"
               }
             >
               Build slideshow
