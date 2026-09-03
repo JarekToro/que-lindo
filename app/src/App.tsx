@@ -142,6 +142,9 @@ export default function App() {
       }
       if (typing) return;
       if (e.key === " ") {
+        // Space is a focused button's own activation key — taking it here
+        // would leave every button unreachable from the keyboard.
+        if (target.tagName === "BUTTON") return;
         e.preventDefault();
         setPlaying(!playing);
         return;
@@ -234,6 +237,7 @@ export default function App() {
               <button
                 className="panel-rail rail-side"
                 title="Show the Arrange panel"
+                aria-label="Show the Arrange panel"
                 onClick={() => setUi({ arrangeCollapsed: false })}
               >
                 Arrange
@@ -250,6 +254,7 @@ export default function App() {
                 <button
                   className="panel-rail rail-bottom"
                   title="Show the Time panel"
+                  aria-label="Show the Time panel"
                   onClick={() => setUi({ timeCollapsed: false })}
                 >
                   Time

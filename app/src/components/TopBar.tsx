@@ -3,6 +3,7 @@ import { loadProject, saveProject } from "../api";
 import { importFiles, projectMediaPaths } from "../App";
 import { applyMemorialTheme, emptyProject, endCard, titleCard } from "../presets";
 import { useEditor } from "../store";
+import Menu from "./Menu";
 import type { FfmpegStatus } from "../types";
 
 const RESOLUTIONS: { label: string; w: number; h: number }[] = [
@@ -87,7 +88,7 @@ export default function TopBar({
   return (
     <header className="topbar">
       <div className="topbar-group">
-        <span className="brand">Slideshow Studio</span>
+        <h1 className="brand">Slideshow Studio</h1>
         <button onClick={doNew}>New</button>
         <button onClick={doOpen}>Open…</button>
         <button onClick={() => doSave(false)}>Save</button>
@@ -98,37 +99,41 @@ export default function TopBar({
         {dirty ? " •" : ""}
       </div>
       <div className="topbar-group">
-        <select value={resValue} onChange={(e) => setResolution(e.target.value)} title="Output size">
+        <select
+          value={resValue}
+          onChange={(e) => setResolution(e.target.value)}
+          title="Output size"
+          aria-label="Output size"
+        >
           {RESOLUTIONS.map((r) => (
             <option key={r.label} value={`${r.w}x${r.h}`}>
               {r.label}
             </option>
           ))}
         </select>
-        <div className="menu">
-          <button>Presets ▾</button>
-          <div className="menu-items">
-            <button
-              onClick={() => {
+        <Menu
+          label="Presets ▾"
+          ariaLabel="Presets"
+          items={[
+            {
+              label: "Add title card (start)",
+              onPick: () => {
                 // Placeholders instead of blocking prompts: the card lands
                 // and its name opens in the panel ready to type.
                 mutate((p) => ({ ...p, slides: [titleCard("", ""), ...p.slides] }));
                 selectSlide(0);
                 selectText(1);
-              }}
-            >
-              Add title card (start)
-            </button>
-            <button onClick={() => mutate((p) => ({ ...p, slides: [...p.slides, endCard()] }))}>
-              Add end card
-            </button>
-            <button onClick={() => mutate((p) => applyMemorialTheme(p))}>
-              Apply memorial pacing
-            </button>
-          </div>
-        </div>
+              },
+            },
+            {
+              label: "Add end card",
+              onPick: () => mutate((p) => ({ ...p, slides: [...p.slides, endCard()] })),
+            },
+            { label: "Apply memorial pacing", onPick: () => mutate((p) => applyMemorialTheme(p)) },
+          ]}
+        />
         {ffmpeg && !ffmpeg.found && (
-          <span className="warn" title={ffmpeg.error ?? undefined}>
+          <span className="warn" role="status" title={ffmpeg.error ?? undefined}>
             ⚠ ffmpeg missing
           </span>
         )}

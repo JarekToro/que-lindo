@@ -320,7 +320,12 @@ export default function Preview() {
     <main className="preview">
       <div className="preview-stage" ref={stageRef}>
         <div className="frame-wrap">
-          <canvas ref={canvasRef} aria-label="preview" hidden={!hasFrame} />
+          <canvas
+            ref={canvasRef}
+            role="img"
+            aria-label={`Preview of slide ${currentSlide + 1} at ${fmt(time)}`}
+            hidden={!hasFrame}
+          />
           {hasFrame && !playing && shownSlide && (shownSlide.texts.length > 0 || zoomTarget) && (
             <div className="text-layer" ref={overlayRef}>
               {zoomTarget && (
@@ -331,6 +336,7 @@ export default function Preview() {
                     top: `${(zoomTarget.rect.y + zoomTarget.motion.origin[1] * zoomTarget.rect.h) * 100}%`,
                   }}
                   title="Drag to aim the zoom"
+                  aria-label="Zoom target — drag to aim the zoom"
                   onPointerDown={(e) => {
                     if (e.button !== 0) return;
                     e.stopPropagation();
@@ -367,6 +373,8 @@ export default function Preview() {
                       transform: `translate(${pos.tx}, ${pos.ty})`,
                     }}
                     title="Drag to place; click to edit in the panel"
+                    aria-label={`Text ${t.text.trim() || t.role} — drag to place, click to edit`}
+                    aria-pressed={active}
                     onPointerDown={(e) => beginTextDrag(e, ti)}
                     onPointerMove={moveTextDrag}
                     onPointerUp={endTextDrag}
@@ -381,18 +389,33 @@ export default function Preview() {
         {!hasFrame && <div className="hint">No preview yet</div>}
       </div>
       <div className="transport">
-        <button onClick={() => selectSlide(currentSlide - 1)} title="Previous slide">
+        <button
+          onClick={() => selectSlide(currentSlide - 1)}
+          title="Previous slide"
+          aria-label="Previous slide"
+        >
           ⏮
         </button>
-        <button className="play" onClick={() => setPlaying(!playing)}>
+        <button
+          className="play"
+          onClick={() => setPlaying(!playing)}
+          title={playing ? "Pause" : "Play"}
+          aria-label={playing ? "Pause" : "Play"}
+        >
           {playing ? "❚❚" : "▶"}
         </button>
-        <button onClick={() => selectSlide(currentSlide + 1)} title="Next slide">
+        <button
+          onClick={() => selectSlide(currentSlide + 1)}
+          title="Next slide"
+          aria-label="Next slide"
+        >
           ⏭
         </button>
         <span className="time">{fmt(time)}</span>
         <input
           type="range"
+          aria-label="Playhead"
+          aria-valuetext={`${fmt(time)} of ${fmt(total)}`}
           min={0}
           max={Math.max(total, 0.001)}
           step={0.05}

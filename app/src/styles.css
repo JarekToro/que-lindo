@@ -56,7 +56,7 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 }
 .topbar-group { display: flex; align-items: center; gap: 8px; }
 .topbar-title { color: var(--muted); }
-.brand { font-weight: 700; color: var(--accent); margin-right: 8px; }
+.brand { font-size: inherit; font-weight: 700; color: var(--accent); margin: 0 8px 0 0; }
 .warn { color: var(--danger); }
 
 .shell { display: flex; flex: 1; min-height: 0; min-width: 0; }
@@ -196,7 +196,9 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   border-radius: 50%; font-size: 9px; display: none; align-items: center; justify-content: center;
   background: var(--panel); z-index: 2;
 }
-.member-chip:hover .chip-x { display: flex; }
+/* Keyboard focus reveals the remove button too — display:none would keep it
+   out of the tab order entirely. */
+.member-chip:hover .chip-x, .member-chip:focus-within .chip-x { display: flex; }
 
 /* The outcome panel: a few verbs for the current selection. */
 .outcome { padding: 4px 0 12px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
@@ -478,7 +480,7 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
   padding: 6px; min-width: 210px; flex-direction: column; gap: 4px;
 }
-.menu:hover .menu-items, .menu:focus-within .menu-items { display: flex; }
+.menu:hover .menu-items, .menu-items[data-open="true"] { display: flex; }
 .menu-items button { text-align: left; }
 
 .modal-backdrop {
