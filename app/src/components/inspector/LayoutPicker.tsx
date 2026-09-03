@@ -15,9 +15,15 @@ export default function LayoutPicker({ slide, index }: { slide: Slide; index: nu
 
   const options = layoutOptions(slide, media);
   let active = activeLayoutIndex(options, slide);
-  // A smart-dealt pile is still scatter: keep its tile lit, not "custom".
-  if (active < 0 && scatterState(slide) === "smart") {
-    active = options.findIndex((o) => o.key === "scatter");
+  // A smart-dealt pile is still scatter: light the variant whose slots the
+  // deal permutes, not the "custom" tile.
+  if (active < 0 && scatterState(slide) === "smart" && slide.layout.type === "custom") {
+    const used = new Set(slide.layout.rects.map((r) => JSON.stringify(r)));
+    active = options.findIndex((o) => {
+      if (!o.key.startsWith("scatter") || o.layout.type !== "custom") return false;
+      const slots = new Set(o.layout.rects.map((r) => JSON.stringify(r)));
+      return slots.size === used.size && [...used].every((k) => slots.has(k));
+    });
   }
 
   return (
