@@ -17,7 +17,7 @@ import { useEditor } from "../../store";
 import type { Cell, Slide, TextOverlay, TransitionKind } from "../../types";
 import { kindLabel, MOTIONS, motionLabel } from "./data";
 import FontPicker from "./FontPicker";
-import LayoutPicker from "./LayoutPicker";
+import LayoutPicker, { cellFills, layoutTileSize, TileCell } from "./LayoutPicker";
 import {
   AnchorGrid,
   ColorField,
@@ -133,9 +133,12 @@ export function MemberStrip({
 function ScatterRow({ slide, index }: { slide: Slide; index: number }) {
   const media = useEditor((s) => s.media);
   const updateSlide = useEditor((s) => s.updateSlide);
+  const settings = useEditor((s) => s.project.settings);
   if (scatterState(slide) === "off") return null;
   const variants = scatterVariants(slide.cells.length);
   const active = activeScatterVariant(slide);
+  const { w: tw, h: th } = layoutTileSize(settings.width / Math.max(1, settings.height));
+  const fills = cellFills(slide, media);
   return (
     <div className="vrow">
       <span className="vlabel">Pile</span>
@@ -154,6 +157,7 @@ function ScatterRow({ slide, index }: { slide: Slide; index: number }) {
           <button
             key={vi}
             className={`layout-tile ${vi === active ? "on" : ""}`}
+            style={{ width: tw, height: th }}
             title={`Pile ${v.label}`}
             aria-label={`Pile ${v.label}`}
             aria-pressed={vi === active}
@@ -162,18 +166,13 @@ function ScatterRow({ slide, index }: { slide: Slide; index: number }) {
               if (patch) updateSlide(index, patch);
             }}
           >
-            {layoutRects({ type: "custom", rects: v.rects }, slide.cells.length, 56, 32, 0, 0.03).map(
+            {layoutRects({ type: "custom", rects: v.rects }, slide.cells.length, tw, th, 0, 0.03).map(
               (r, ci) => (
-                <span
+                <TileCell
                   key={ci}
-                  className="lt-cell"
-                  style={{
-                    left: r.x,
-                    top: r.y,
-                    width: Math.max(r.w, 2),
-                    height: Math.max(r.h, 2),
-                    transform: `rotate(${v.angles[ci % v.angles.length]}deg)`,
-                  }}
+                  r={r}
+                  fill={fills[ci] ?? null}
+                  rotation={v.angles[ci % v.angles.length]}
                 />
               ),
             )}
