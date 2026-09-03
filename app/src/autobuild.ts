@@ -8,6 +8,7 @@
 // whole thing is testable by calling `buildSlides` with plain objects. (The
 // repo has no TS test runner yet; when one lands these exports are the unit.)
 
+import { eraScore } from "./era";
 import { smartScatterPatch } from "./layouts";
 import { GENTLE_CROSSFADE, autoLayout, cellFor, defaultSlide } from "./presets";
 import type { Cell, ImportedMedia, MediaItem, Settings, Slide, Transition } from "./types";
@@ -49,25 +50,24 @@ function builtCell(m: ImportedMedia, index = 0): Cell {
 }
 
 /**
- * Dated media sorts by capture time; undated media never moves. Each undated
- * file keeps the bin slot it arrived in and the dated ones, in time order,
- * fill the slots that were theirs. Ties keep bin order, so the result is a
- * stable total order — no clock, no randomness.
+ * Life-story order. Dated media sorts by capture time. Undated media with a
+ * scene embedding sorts by how old it *looks* (era anchors — scans and
+ * prints predate any file with EXIF, so they lead the film); undated media
+ * with no embedding keeps bin order among itself. The result: apparent
+ * era first, then the dated timeline. Deterministic — ties keep bin order.
  */
 export function orderByCapture(media: readonly ImportedMedia[]): ImportedMedia[] {
-  const slots: number[] = [];
-  const dated: { media: ImportedMedia; at: number; slot: number }[] = [];
+  const dated: { m: ImportedMedia; at: number; slot: number }[] = [];
+  const byEra: { m: ImportedMedia; era: number; slot: number }[] = [];
+  const plain: { m: ImportedMedia; slot: number }[] = [];
   media.forEach((m, slot) => {
-    if (m.captured_at === null) return;
-    slots.push(slot);
-    dated.push({ media: m, at: m.captured_at, slot });
+    if (m.captured_at !== null) dated.push({ m, at: m.captured_at, slot });
+    else if (m.embedding) byEra.push({ m, era: eraScore(m.embedding), slot });
+    else plain.push({ m, slot });
   });
   dated.sort((a, b) => a.at - b.at || a.slot - b.slot);
-  const out = [...media];
-  slots.forEach((slot, i) => {
-    out[slot] = dated[i].media;
-  });
-  return out;
+  byEra.sort((a, b) => a.era - b.era || a.slot - b.slot);
+  return [...byEra.map((x) => x.m), ...plain.map((x) => x.m), ...dated.map((x) => x.m)];
 }
 
 /** How far apart two thumbnail fingerprints may sit (mean absolute channel
