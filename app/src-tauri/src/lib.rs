@@ -27,7 +27,9 @@ pub struct AppState {
     preview_tx: crossbeam_channel_like::Sender<preview::Job>,
     export_cancel: Mutex<Option<CancelFlag>>,
     fonts: Mutex<Option<Vec<String>>>,
-    /// Mixed preview audio (raw PCM) cached for one project revision.
+    /// Mixed preview audio (raw PCM), keyed by a hash of what the mix
+    /// actually depends on (audio tracks + film length) — photo edits bump
+    /// the project rev constantly and must not throw the mix away.
     audio_mix: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
 }
 
@@ -530,8 +532,18 @@ async fn render_audio_mix(state: State<'_, AppState>) -> Result<Response, String
         out.extend_from_slice(pcm);
         Response::new(out)
     };
-    if let Some((cached_rev, bytes)) = state.audio_mix.lock().unwrap().as_ref() {
-        if *cached_rev == rev {
+    // The mix depends only on the audio tracks and the film's length; hash
+    // those so photo edits reuse the rendered PCM instead of re-decoding
+    // whole songs on every revision.
+    let mix_key = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        serde_json::to_string(&project.audio).unwrap_or_default().hash(&mut h);
+        timeline.total_duration().to_bits().hash(&mut h);
+        h.finish()
+    };
+    if let Some((cached_key, bytes)) = state.audio_mix.lock().unwrap().as_ref() {
+        if *cached_key == mix_key {
             return Ok(respond(rev, bytes));
         }
     }
@@ -544,7 +556,7 @@ async fn render_audio_mix(state: State<'_, AppState>) -> Result<Response, String
     .await
     .map_err(|e| e.to_string())??;
     let bytes = Arc::new(pcm.unwrap_or_default());
-    *state.audio_mix.lock().unwrap() = Some((rev, bytes.clone()));
+    *state.audio_mix.lock().unwrap() = Some((mix_key, bytes.clone()));
     Ok(respond(rev, &bytes))
 }
 

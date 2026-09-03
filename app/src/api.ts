@@ -136,7 +136,16 @@ const MIX_CHANNELS = 2;
 export const renderAudioMix = async (
   ctx: AudioContext,
 ): Promise<{ rev: number; buffer: AudioBuffer | null }> => {
-  const buf = await invoke<ArrayBuffer>("render_audio_mix");
+  const raw = await invoke<ArrayBuffer | Uint8Array | number[]>("render_audio_mix");
+  // A long dev session can degrade Tauri's IPC to the postMessage fallback,
+  // which hands binary responses back as arrays — normalize instead of
+  // throwing, or every play stays silent until an app restart.
+  const buf =
+    raw instanceof ArrayBuffer
+      ? raw
+      : raw instanceof Uint8Array
+        ? raw.slice().buffer
+        : new Uint8Array(raw).buffer;
   const rev = Number(new DataView(buf).getBigUint64(0, true));
   const pcm = new Int16Array(buf, 8, Math.floor((buf.byteLength - 8) / 2));
   const frames = Math.floor(pcm.length / MIX_CHANNELS);
