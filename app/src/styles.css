@@ -359,6 +359,12 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   width: 34px; height: auto; margin: 0 0 0 6px; flex-shrink: 0; animation: none;
 }
 .time-strip.vertical .seam-marker { left: 30px; top: auto; transform: translate(0, -50%); margin-top: 0; }
+.time-strip.vertical .mark-tick {
+  left: 34px; right: 40px; top: auto; width: auto; height: 1px; margin-left: 0; margin-top: -0.5px;
+}
+.time-strip.vertical .mark-pin {
+  left: auto; right: 0; top: auto; width: 34px; height: 18px; margin-left: 0; margin-top: -9px;
+}
 .time-strip.vertical .playhead {
   left: 0; right: 0; top: auto; bottom: auto; width: auto; height: 2px; margin-left: 0; margin-top: -1px;
 }
@@ -391,7 +397,33 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   to { transform: none; opacity: 1; }
 }
 .audio-lane canvas { height: 100%; display: block; }
+.audio-lane.markable { cursor: crosshair; }
 .lane-hint { position: absolute; inset: 0; display: flex; align-items: center; padding-left: 10px; }
+
+/* Beat marks: a diamond on the waveform, and a hairline through the strip
+   above it so a mark sitting off its seam is impossible to miss. The offsets
+   are the ruler (20 + 6), the card row (76 + 3 padding + 1 border, doubled)
+   and the lane's 6px gap. */
+.mark-tick {
+  position: absolute; top: 26px; height: 90px; width: 1px; margin-left: -0.5px;
+  background: var(--accent); opacity: 0.45; pointer-events: none; z-index: 2;
+}
+.mark-tick.selected { opacity: 0.9; }
+.mark-pin {
+  position: absolute; top: 116px; height: 34px; width: 18px; margin-left: -9px;
+  padding: 0; z-index: 5; cursor: grab; touch-action: none;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: var(--accent);
+}
+.mark-pin > span {
+  display: flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  transition: background 120ms ease-out, box-shadow 120ms ease-out;
+}
+.mark-pin:hover > span { background: var(--panel); }
+.mark-pin.selected > span { background: var(--panel); box-shadow: 0 0 0 1px var(--accent); }
+.mark-pin:focus-visible { outline: none; }
+.mark-pin:focus-visible > span { background: var(--panel); box-shadow: 0 0 0 2px var(--accent); }
 .seam-marker {
   position: absolute; top: 20px; transform: translateX(-50%); z-index: 3;
   width: 18px; height: 18px; padding: 0; border-radius: 50%; margin-top: 6px;

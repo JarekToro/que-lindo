@@ -649,6 +649,12 @@ pub struct AudioTrack {
     /// Loop the track until the end of the video.
     #[serde(default, rename = "loop")]
     pub loop_: bool,
+    /// Beat marks the editor drops on the music, in this track's own time
+    /// base (seconds into the source file, so `offset` and `start` both carry
+    /// them). Sorted ascending. Playback ignores them; they exist so slide
+    /// timings can be snapped to the music.
+    #[serde(default)]
+    pub markers: Vec<f64>,
 }
 
 fn default_audio_fade() -> f64 {
@@ -771,12 +777,21 @@ mod tests {
             fade_in: 2.0,
             fade_out: 3.0,
             loop_: true,
+            markers: vec![2.5, 9.0],
         });
         let json = p.to_json();
         let p2 = Project::from_json(&json).unwrap();
         assert_eq!(p2.slides.len(), 1);
         assert_eq!(p2.slides[0].layout, Layout::Grid { rows: 2, cols: 2 });
         assert_eq!(p2.to_json(), json);
+    }
+
+    #[test]
+    fn audio_track_without_markers_still_loads() {
+        // Projects written before beat marks existed carry no `markers` key.
+        let json = r#"{"audio":[{"path":"music.mp3","start":0.0}]}"#;
+        let p = Project::from_json(json).unwrap();
+        assert!(p.audio[0].markers.is_empty());
     }
 
     #[test]
