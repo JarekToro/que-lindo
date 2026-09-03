@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { checkFfmpeg, detectFocus, loadProject, mediaThumb, onFileDrop, probeMedia, startupProject } from "./api";
+import { checkRecovery, useAutosave, useRecovery } from "./autosave";
 import ExportDialog from "./components/ExportDialog";
 import Inspector from "./components/Inspector";
 import Preview from "./components/Preview";
+import RecoveryDialog from "./components/RecoveryDialog";
 import Splitter from "./components/Splitter";
 import Timeline from "./components/Timeline";
 import TopBar from "./components/TopBar";
@@ -101,10 +103,14 @@ export default function App() {
     // A project file passed on the command line opens on launch.
     startupProject()
       .then(async (path) => {
-        if (!path) return;
-        const p = await loadProject(path);
-        replaceProject(p, { path });
-        void importFiles(projectMediaPaths(p));
+        if (path) {
+          const p = await loadProject(path);
+          replaceProject(p, { path });
+          void importFiles(projectMediaPaths(p));
+        }
+        // Whatever the session starts as, a snapshot left behind by a crash
+        // belongs to it.
+        await checkRecovery(path);
       })
       .catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -169,6 +175,9 @@ export default function App() {
     if (!picked) return;
     void importIntoTimeline(Array.isArray(picked) ? picked : [picked]);
   };
+
+  useAutosave(exporting);
+  const recovery = useRecovery((s) => s.offer);
 
   const ui = useEditor((s) => s.ui);
   const setUi = useEditor((s) => s.setUi);
@@ -289,6 +298,7 @@ export default function App() {
         )}
       </div>
       {exporting && <ExportDialog onClose={() => setExporting(false)} ffmpegFound={!!ffmpeg?.found} />}
+      {recovery && <RecoveryDialog offer={recovery} />}
     </div>
   );
 }
