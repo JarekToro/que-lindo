@@ -2,12 +2,50 @@
 // collapsed by default — it survives empty projects and empty selections.
 
 import { useEditor } from "../../store";
-import type { AudioTrack } from "../../types";
+import type { AudioTrack, MediaItem, Project } from "../../types";
 import { ColorField, NumField, Segmented, SliderField, VGroup } from "./fields";
+
+/** Where the music bed ends on the timeline: the first non-looping track's
+ * natural end (explicit duration, else file length minus the seek offset).
+ * Null when nothing usable — no tracks, all looping, or length unknown. */
+function musicEnd(project: Project, media: MediaItem[]): number | null {
+  const track = project.audio.find((a) => !a.loop);
+  if (!track) return null;
+  let len = track.duration;
+  if (len === null) {
+    const item = media.find((m) => m.path === track.path);
+    if (item?.status !== "ready" || item.info.duration <= 0) return null;
+    len = item.info.duration - track.offset;
+  }
+  return len > 0 ? track.start + len : null;
+}
 
 export default function ProjectValues() {
   const project = useEditor((s) => s.project);
   const mutate = useEditor((s) => s.mutate);
+  const media = useEditor((s) => s.media);
+  const timing = useEditor((s) => s.timing);
+
+  // Scale every slide's time-on-screen so the film ends with the music.
+  // Transition and outro spans stay fixed, so the delta lands entirely on
+  // the sum of durations — one linear correction, clamped to sane slides.
+  const fitTarget = musicEnd(project, media);
+  const canFit =
+    fitTarget !== null && timing !== null && timing.total > 0 && project.slides.length > 0;
+  const fitToMusic = () => {
+    if (fitTarget === null || timing === null) return;
+    const sum = project.slides.reduce((acc, s) => acc + s.duration, 0);
+    const needed = sum + (fitTarget - timing.total);
+    if (sum <= 0 || needed <= 0) return;
+    const f = needed / sum;
+    mutate((p) => ({
+      ...p,
+      slides: p.slides.map((s) => ({
+        ...s,
+        duration: Math.min(120, Math.max(1, s.duration * f)),
+      })),
+    }));
+  };
 
   const patchAudio = (ai: number, patch: Partial<AudioTrack>) =>
     mutate((p) => ({
@@ -58,6 +96,22 @@ export default function ProjectValues() {
             />
           </div>
         ))}
+        {project.audio.length > 0 && (
+          <div className="vrow">
+            <span className="vlabel">Timing</span>
+            <button
+              disabled={!canFit}
+              title={
+                canFit
+                  ? `Stretch or squeeze every slide so the film ends with the music (${fitTarget.toFixed(1)}s)`
+                  : "Needs a non-looping track with a known length, and at least one slide"
+              }
+              onClick={fitToMusic}
+            >
+              Fit to music
+            </button>
+          </div>
+        )}
       </VGroup>
       <VGroup label="Output">
         <NumField label="FPS" value={project.settings.fps} min={10} max={60} step={1}
