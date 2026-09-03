@@ -206,7 +206,6 @@ const SCATTER_PILES: Record<number, Pile[]> = {
   ],
 };
 
-const ROMAN = ["", " II", " III", " IV"];
 
 /** Hand-designed photo-book patterns per count (gap baked at 2%). */
 const QUILTS: Record<number, { key: string; label: string; rects: NormRect[] }[]> = {
@@ -343,16 +342,19 @@ export function layoutOptions(slide: Slide, media: MediaItem[]): LayoutOption[] 
     for (const q of QUILTS[n] ?? []) {
       plain(`quilt-${q.key}`, q.label, { type: "custom", rects: q.rects });
     }
-    (SCATTER_PILES[n] ?? []).forEach((pile, vi) => {
-      const layout: Layout = { type: "custom", rects: pile.rects };
+    const piles = SCATTER_PILES[n] ?? [];
+    if (piles.length > 0) {
       out.push({
-        key: vi === 0 ? "scatter" : `scatter-${vi}`,
-        label: `Scatter${ROMAN[vi] ?? ` ${vi + 1}`}`,
-        layout,
-        tileRotations: pile.angles,
-        apply: (s) => scatterPatch(s, pile, (i) => i),
+        key: "scatter",
+        label: "Scatter",
+        layout: { type: "custom", rects: piles[0].rects },
+        tileRotations: piles[0].angles,
+        // Entering scatter starts in Smart: the scorer picks the variant and
+        // the deal (which degrades to the plain first pile when no face is
+        // known, since every assignment then scores the same).
+        apply: (s) => smartScatterPatch(s, media) ?? scatterPatch(s, piles[0], (i) => i),
       });
-    });
+    }
   }
   return out;
 }
@@ -566,6 +568,36 @@ export function plainScatterPatch(slide: Slide): LayoutPatch | null {
     if (found) match = found;
   }
   return scatterPatch(slide, match, (i) => i);
+}
+
+/** The pile variants available at this member count, for the manual variant
+ * row: geometry for the mini-diagrams plus a short numeral label. */
+export function scatterVariants(
+  n: number,
+): { rects: NormRect[]; angles: number[]; label: string }[] {
+  return (SCATTER_PILES[n] ?? []).map((pile, vi) => ({
+    rects: pile.rects,
+    angles: pile.angles,
+    label: ["I", "II", "III", "IV"][vi] ?? `${vi + 1}`,
+  }));
+}
+
+/** Which pile variant the slide's slots come from (any deal), -1 if none. */
+export function activeScatterVariant(slide: Slide): number {
+  const piles = SCATTER_PILES[slide.cells.length] ?? [];
+  if (slide.layout.type !== "custom") return -1;
+  const key = (r: NormRect) => JSON.stringify(r);
+  const used = new Set(slide.layout.rects.map(key));
+  return piles.findIndex((pile) => {
+    const slots = new Set(pile.rects.map(key));
+    return slots.size === used.size && [...used].every((k) => slots.has(k));
+  });
+}
+
+/** The plain (table-order) deal of one specific variant — the manual pick. */
+export function scatterVariantPatch(slide: Slide, vi: number): LayoutPatch | null {
+  const pile = (SCATTER_PILES[slide.cells.length] ?? [])[vi];
+  return pile ? scatterPatch(slide, pile, (i) => i) : null;
 }
 
 /** Whether the slide is on scatter at all, and which flavor: some variant's
