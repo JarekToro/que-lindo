@@ -153,6 +153,91 @@ fn save_current_project(state: State<AppState>, path: String) -> Result<(), Stri
     std::fs::write(&path, doc.project.to_json()).map_err(|e| format!("writing {path}: {e}"))
 }
 
+/// The untitled project's recovery snapshot: one well-known file, since an
+/// unsaved project has no directory of its own to sit beside.
+const UNTITLED_AUTOSAVE: &str = "untitled.slideshow.json.autosave";
+
+#[derive(Serialize)]
+struct AutosaveInfo {
+    path: String,
+    /// Snapshot mtime as Unix milliseconds.
+    modified_ms: u64,
+}
+
+/// Where a project's recovery snapshot lives: beside the project file, or in
+/// the app data dir when the project has never been saved.
+fn autosave_target(app: &tauri::AppHandle, project_path: Option<&str>) -> Result<PathBuf, String> {
+    if let Some(p) = project_path {
+        return Ok(PathBuf::from(format!("{p}.autosave")));
+    }
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("creating {}: {e}", dir.display()))?;
+    Ok(dir.join(UNTITLED_AUTOSAVE))
+}
+
+fn modified_ms(meta: &std::fs::Metadata) -> Result<u64, String> {
+    let t = meta.modified().map_err(|e| e.to_string())?;
+    let since = t.duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?;
+    Ok(since.as_millis() as u64)
+}
+
+/// Write a recovery snapshot (same JSON a manual save writes, so
+/// `load_project` reads it back) and return where it landed. Omitting
+/// `project` snapshots the backend's last `set_project` instead — a closing
+/// window has no time to marshal the document across IPC.
+#[tauri::command]
+fn write_autosave(
+    app: tauri::AppHandle,
+    state: State<AppState>,
+    project_path: Option<String>,
+    project: Option<Project>,
+) -> Result<String, String> {
+    let target = autosave_target(&app, project_path.as_deref())?;
+    let json = match project {
+        Some(p) => p.to_json(),
+        None => {
+            let current = state.current.lock().unwrap();
+            let doc = current.as_ref().ok_or_else(|| "no project loaded".to_string())?;
+            doc.project.to_json()
+        }
+    };
+    std::fs::write(&target, json).map_err(|e| format!("writing {}: {e}", target.display()))?;
+    Ok(target.display().to_string())
+}
+
+#[tauri::command]
+fn clear_autosave(app: tauri::AppHandle, project_path: Option<String>) -> Result<(), String> {
+    let target = autosave_target(&app, project_path.as_deref())?;
+    match std::fs::remove_file(&target) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("removing {}: {e}", target.display())),
+    }
+}
+
+/// The recovery snapshot worth offering, or null when there is none: a
+/// snapshot no newer than the project file it sits beside is left over from
+/// before the last manual save and must not shadow it.
+#[tauri::command]
+fn autosave_info(
+    app: tauri::AppHandle,
+    project_path: Option<String>,
+) -> Result<Option<AutosaveInfo>, String> {
+    let target = autosave_target(&app, project_path.as_deref())?;
+    let Ok(snapshot) = std::fs::metadata(&target) else {
+        return Ok(None);
+    };
+    let modified = modified_ms(&snapshot)?;
+    if let Some(p) = project_path.as_deref() {
+        if let Ok(original) = std::fs::metadata(p) {
+            if modified_ms(&original)? >= modified {
+                return Ok(None);
+            }
+        }
+    }
+    Ok(Some(AutosaveInfo { path: target.display().to_string(), modified_ms: modified }))
+}
+
 /// Async + blocking pool so the frontend can probe several files at once
 /// (its import worker pool bounds the concurrency).
 #[tauri::command]
@@ -462,6 +547,9 @@ pub fn run() {
             load_project,
             save_project,
             save_current_project,
+            write_autosave,
+            clear_autosave,
+            autosave_info,
             probe_media,
             media_thumb,
             detect_focus,
