@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { isSuperseded, renderPreview } from "../api";
 import { layoutRects } from "../layout";
+import { swapPositions } from "../layouts";
 import { ensureAudioCtx, mixForRev } from "../mixcache";
 import { ANCHOR_POINTS } from "../presets";
 import { slideAt, useEditor } from "../store";
@@ -253,16 +254,24 @@ export default function Preview() {
 
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
-  // ---- click a photo on the frame to select it in the inspector ----
+  // ---- click a photo to select it; drag it onto another to swap spots ----
   const selectCell = useEditor((s) => s.selectCell);
-  const pickCell = (e: React.PointerEvent) => {
-    if (e.button !== 0 || playing || !shownSlide) return;
+  const updateSlide = useEditor((s) => s.updateSlide);
+  const [swapHover, setSwapHover] = useState<number | null>(null);
+  const cellDrag = useRef<{ from: number; startX: number; startY: number; active: boolean } | null>(
+    null,
+  );
+
+  /** Topmost cell under the pointer (cells render in array order, so the
+   * last hit takes the click when custom rects overlap). */
+  const cellAt = (e: { clientX: number; clientY: number }): number => {
+    if (!shownSlide) return -1;
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return -1;
     const r = canvas.getBoundingClientRect();
     const fx = (e.clientX - r.left) / Math.max(r.width, 1);
     const fy = (e.clientY - r.top) / Math.max(r.height, 1);
-    if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return;
+    if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return -1;
     const W = project.settings.width;
     const H = Math.max(project.settings.height, 1);
     const rects = layoutRects(
@@ -273,17 +282,78 @@ export default function Preview() {
       shownSlide.margin,
       shownSlide.gutter,
     );
-    // Last hit wins: cells render in array order, so the topmost one takes
-    // the click when custom rects overlap.
     let hit = -1;
     rects.forEach((rc, i) => {
       if (fx >= rc.x / W && fx <= (rc.x + rc.w) / W && fy >= rc.y / H && fy <= (rc.y + rc.h) / H)
         hit = i;
     });
+    return hit;
+  };
+
+  const pickCell = (e: React.PointerEvent) => {
+    if (e.button !== 0 || playing || !shownSlide) return;
+    const hit = cellAt(e);
     selectSlide(currentSlide, false);
     selectText(null);
     selectCell(hit >= 0 ? hit : null);
+    if (hit >= 0 && shownSlide.cells.length > 1) {
+      cellDrag.current = { from: hit, startX: e.clientX, startY: e.clientY, active: false };
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        // Synthetic pointers have no capturable id; moves still bubble here.
+      }
+    }
   };
+
+  const moveCellDrag = (e: React.PointerEvent) => {
+    const d = cellDrag.current;
+    if (!d || !(e.buttons & 1)) return;
+    if (!d.active && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > 8) d.active = true;
+    if (!d.active) return;
+    const over = cellAt(e);
+    setSwapHover(over >= 0 && over !== d.from ? over : null);
+  };
+
+  const endCellDrag = (e: React.PointerEvent) => {
+    const d = cellDrag.current;
+    cellDrag.current = null;
+    setSwapHover(null);
+    if (!d || !d.active || !shownSlide) return;
+    const target = cellAt(e);
+    if (target < 0 || target === d.from) return;
+    const patch = swapPositions(shownSlide, d.from, target);
+    if (patch) {
+      updateSlide(currentSlide, patch);
+      // On ordered layouts the cells traded places, so the dragged photo
+      // now lives at the target index; keep it selected either way.
+      selectCell(shownSlide.layout.type === "custom" ? d.from : target);
+    }
+  };
+
+  // The brass seat marking where the drag would land.
+  const swapSeat = (() => {
+    if (swapHover === null || !shownSlide) return null;
+    const W = project.settings.width;
+    const H = Math.max(project.settings.height, 1);
+    const rects = layoutRects(
+      shownSlide.layout,
+      shownSlide.cells.length,
+      W,
+      H,
+      shownSlide.margin,
+      shownSlide.gutter,
+    );
+    const r = rects[swapHover];
+    if (!r) return null;
+    return {
+      left: `${(r.x / W) * 100}%`,
+      top: `${(r.y / H) * 100}%`,
+      width: `${(r.w / W) * 100}%`,
+      height: `${(r.h / H) * 100}%`,
+      rotation: shownSlide.cells[swapHover]?.rotation ?? 0,
+    };
+  })();
 
   // ---- zoom focus on the frame: aim where the zoom pushes into ----
   const selectedCellIdx = useEditor((s) => s.selectedCell);
@@ -354,9 +424,29 @@ export default function Preview() {
         <div
           className="frame-wrap"
           onPointerDown={pickCell}
-          title={shownSlide && shownSlide.cells.length ? "Click a photo to select it" : undefined}
+          onPointerMove={moveCellDrag}
+          onPointerUp={endCellDrag}
+          title={
+            shownSlide && shownSlide.cells.length > 1
+              ? "Click a photo to select it; drag it onto another to swap places"
+              : shownSlide && shownSlide.cells.length
+                ? "Click the photo to select it"
+                : undefined
+          }
         >
           <canvas ref={canvasRef} aria-label="preview" hidden={!hasFrame} />
+          {swapSeat && (
+            <span
+              className="swap-seat"
+              style={{
+                left: swapSeat.left,
+                top: swapSeat.top,
+                width: swapSeat.width,
+                height: swapSeat.height,
+                transform: swapSeat.rotation ? `rotate(${swapSeat.rotation}deg)` : undefined,
+              }}
+            />
+          )}
           {hasFrame && !playing && shownSlide && (shownSlide.texts.length > 0 || zoomTarget) && (
             <div className="text-layer" ref={overlayRef}>
               {zoomTarget && (
