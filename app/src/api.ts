@@ -35,6 +35,16 @@ export const cancelExport = () => invoke<void>("cancel_export");
 export const exportVideo = (project: Project, outPath: string, scale: number, crf: number) =>
   invoke<void>("export_video", { project, outPath, scale, crf });
 
+/** Which of these paths no longer exist on disk (relinkable vs. merely broken). */
+export const missingPaths = (paths: string[]) => invoke<string[]>("missing_paths", { paths });
+
+/** Bounded recursive filename hunt under `dir`, keyed by file name. */
+export const searchMediaFolder = (dir: string, names: string[]) =>
+  invoke<{ matches: Record<string, string>; ambiguous: string[] }>("search_media_folder", {
+    dir,
+    names,
+  });
+
 export const setProjectBackend = (project: Project, rev: number) =>
   invoke<Timing>("set_project", { project, rev });
 
