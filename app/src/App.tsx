@@ -5,6 +5,7 @@ import {
   checkFfmpeg,
   detectFocus,
   embedMedia,
+  faceEmbeddings,
   loadProject,
   mediaThumb,
   missingPaths,
@@ -137,8 +138,13 @@ export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
         const embedding = probed.info.is_image
           ? await embedMedia(path).catch(() => null)
           : null;
-        useEditor.getState().setThumb(path, thumb, focus, focusRect, signature, faceCount, embedding);
-        done[slot] = { ...probed, thumb, focus, focusRect, signature, faceCount, embedding };
+        const faces = probed.info.is_image
+          ? await faceEmbeddings(path).catch((): number[][] => [])
+          : [];
+        useEditor
+          .getState()
+          .setThumb(path, thumb, focus, focusRect, signature, faceCount, embedding, faces);
+        done[slot] = { ...probed, thumb, focus, focusRect, signature, faceCount, embedding, faces };
       } catch (e) {
         console.error("import failed", path, e);
         useEditor.getState().finishImport(path, { error: String(e) });

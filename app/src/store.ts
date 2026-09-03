@@ -120,6 +120,7 @@ export interface EditorState {
     signature?: number[] | null,
     faceCount?: number | null,
     embedding?: number[] | null,
+    faces?: number[][],
   ): void;
   removeMedia(path: string): void;
   /** Repoint every reference (cells and audio) from old path to new, one undo
@@ -294,12 +295,13 @@ export const useEditor = create<EditorState>((set, get) => ({
               signature: null,
               faceCount: null,
               embedding: null,
+              faces: [],
             };
       }),
     });
   },
 
-  setThumb(path, thumb, focus = null, focusRect = null, signature = null, faceCount = null, embedding = null) {
+  setThumb(path, thumb, focus = null, focusRect = null, signature = null, faceCount = null, embedding = null, faces = []) {
     const item = get().media.find((m) => m.path === path);
     if (!item || item.status !== "ready") {
       // The item left the bin while its thumbnail rendered.
@@ -309,7 +311,7 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({
       media: get().media.map((m): MediaItem =>
         m.path === path && m.status === "ready"
-          ? { ...m, thumb, focus, focusRect, signature, faceCount, embedding }
+          ? { ...m, thumb, focus, focusRect, signature, faceCount, embedding, faces }
           : m,
       ),
     });

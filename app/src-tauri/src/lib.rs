@@ -311,6 +311,18 @@ async fn embed_media(app: tauri::AppHandle, path: String) -> Result<Option<Vec<f
 }
 
 #[tauri::command]
+async fn face_embeddings(app: tauri::AppHandle, path: String) -> Result<Vec<Vec<f32>>, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = Path::new(&path);
+        let boxes = focus::face_boxes(p);
+        embed::embed_faces(&dir, p, &boxes)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn embed_available(app: tauri::AppHandle) -> bool {
     app.path()
         .app_data_dir()
@@ -641,6 +653,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             embed_media,
             embed_available,
+            face_embeddings,
             check_ffmpeg,
             startup_project,
             set_project,

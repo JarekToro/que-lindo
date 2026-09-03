@@ -37,6 +37,42 @@ pub struct FocusInfo {
     pub count: usize,
 }
 
+/// Every face's box as frame fractions `[x, y, w, h]` — the crops the
+/// identity embedder works from. Empty when nothing is found.
+pub fn face_boxes(path: &Path) -> Vec<[f32; 4]> {
+    let Ok(img) = image::open(path) else {
+        return Vec::new();
+    };
+    let (w0, h0) = (img.width().max(1), img.height().max(1));
+    let scale = (480.0 / w0.max(h0) as f32).min(1.0);
+    let w = ((w0 as f32 * scale) as u32).max(1);
+    let h = ((h0 as f32 * scale) as u32).max(1);
+    let gray = img.resize_exact(w, h, FilterType::Triangle).to_luma8();
+    let data = ImageData::new(gray.as_raw(), gray.width(), gray.height());
+    let Some(faces) = DETECTOR.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if slot.is_none() {
+            *slot = build_detector();
+        }
+        slot.as_mut().map(|d| d.detect(&data))
+    }) else {
+        return Vec::new();
+    };
+    let (gw, gh) = (gray.width() as f32, gray.height() as f32);
+    faces
+        .iter()
+        .map(|f| {
+            let b = f.bbox();
+            [
+                (b.x() as f32 / gw).clamp(0.0, 1.0),
+                (b.y() as f32 / gh).clamp(0.0, 1.0),
+                (b.width() as f32 / gw).min(1.0),
+                (b.height() as f32 / gh).min(1.0),
+            ]
+        })
+        .collect()
+}
+
 /// The photo's faces, or None when nothing is found (callers fall back to
 /// center). Multiple faces resolve to a centroid and a group box — a group
 /// photo frames the group.
