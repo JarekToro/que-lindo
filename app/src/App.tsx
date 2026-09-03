@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import {
   checkFfmpeg,
   detectFocus,
+  embedMedia,
   loadProject,
   mediaThumb,
   missingPaths,
@@ -42,6 +43,13 @@ export function projectMediaPaths(p: Project): string[] {
 }
 
 const PROBE_CONCURRENCY = 4;
+
+declare global {
+  interface Window {
+    /** Test/automation handle — same instance the app uses (HMR-safe). */
+    __importFiles?: typeof importFiles;
+  }
+}
 
 /** 6×6 mean-RGB fingerprint of a thumbnail — enough to say "these two scans
  * look like the same roll" without any metadata. Averaged over every pixel
@@ -126,8 +134,11 @@ export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
           }
         }
         const signature = thumb ? await thumbSignature(thumb).catch(() => null) : null;
-        useEditor.getState().setThumb(path, thumb, focus, focusRect, signature, faceCount);
-        done[slot] = { ...probed, thumb, focus, focusRect, signature, faceCount };
+        const embedding = probed.info.is_image
+          ? await embedMedia(path).catch(() => null)
+          : null;
+        useEditor.getState().setThumb(path, thumb, focus, focusRect, signature, faceCount, embedding);
+        done[slot] = { ...probed, thumb, focus, focusRect, signature, faceCount, embedding };
       } catch (e) {
         console.error("import failed", path, e);
         useEditor.getState().finishImport(path, { error: String(e) });
@@ -430,3 +441,5 @@ export default function App() {
     </div>
   );
 }
+
+window.__importFiles = importFiles;

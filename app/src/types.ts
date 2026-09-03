@@ -186,6 +186,9 @@ export interface ImportedMedia extends ProbedMedia {
   signature: number[] | null;
   /** How many faces the detector saw; null = detection didn't run. */
   faceCount: number | null;
+  /** L2-normalized scene embedding; null when no embedding model is
+   * installed (grouping then falls back to fingerprint + faces). */
+  embedding: number[] | null;
 }
 
 /**
