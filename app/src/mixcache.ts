@@ -23,8 +23,13 @@ export function mixForRev(ctx: AudioContext, rev: number): Promise<AudioBuffer |
   const promise = (async () => {
     for (let attempt = 0; ; attempt++) {
       const { rev: gotRev, buffer } = await renderAudioMix(ctx);
-      if (gotRev >= rev || attempt >= 5) {
+      if (gotRev >= rev) {
         mixCache = { rev: gotRev, buffer };
+        return buffer;
+      }
+      if (attempt >= 5) {
+        // The backend never caught up; hand back the stale answer but do NOT
+        // cache it — caching would pin a possibly-silent mix on this rev.
         return buffer;
       }
       await new Promise((r) => setTimeout(r, 200));

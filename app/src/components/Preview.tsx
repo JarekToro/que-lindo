@@ -125,6 +125,14 @@ export default function Preview() {
     let anchorPos = 0;
     let anchorCtxTime = 0;
 
+    const attach = (buffer: AudioBuffer) => {
+      const at = anchorPos + (ctx.currentTime - anchorCtxTime);
+      if (at >= buffer.duration) return;
+      source = new AudioBufferSourceNode(ctx, { buffer });
+      source.connect(ctx.destination);
+      source.start(0, at);
+    };
+
     const begin = async () => {
       await ctx.resume();
       let buffer: AudioBuffer | null = null;
@@ -136,12 +144,23 @@ export default function Preview() {
       if (cancelled) return;
       anchorPos = useEditor.getState().time;
       anchorCtxTime = ctx.currentTime;
-      if (buffer && anchorPos < buffer.duration) {
-        source = new AudioBufferSourceNode(ctx, { buffer });
-        source.connect(ctx.destination);
-        source.start(0, anchorPos);
-      }
+      if (buffer) attach(buffer);
       started = true;
+      // A silent start with music on the timeline means the backend hadn't
+      // caught up yet (the mix fetch races the debounced project sync). Keep
+      // asking and join the sound in, mid-play, the moment it lands.
+      if (!buffer && useEditor.getState().project.audio.length > 0) {
+        for (let i = 0; i < 10 && !cancelled && !source; i++) {
+          await new Promise((r) => setTimeout(r, 500));
+          if (cancelled) return;
+          try {
+            const late = await mixForRev(ctx, useEditor.getState().rev);
+            if (!cancelled && !source && late) attach(late);
+          } catch {
+            // Still unavailable; keep trying until the attempts run out.
+          }
+        }
+      }
     };
     void begin();
 
