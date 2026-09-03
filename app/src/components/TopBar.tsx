@@ -1,6 +1,7 @@
 import { ask, message, open, save } from "@tauri-apps/plugin-dialog";
-import { loadProject, saveProject } from "../api";
+import { clearAutosave, loadProject, saveProject } from "../api";
 import { importFiles, projectMediaPaths } from "../App";
+import { checkRecovery } from "../autosave";
 import { applyMemorialTheme, emptyProject, endCard, titleCard } from "../presets";
 import { useEditor } from "../store";
 import type { FfmpegStatus } from "../types";
@@ -51,6 +52,7 @@ export default function TopBar({
       const p = await loadProject(picked);
       replaceProject(p, { path: picked });
       void importFiles(projectMediaPaths(p));
+      void checkRecovery(picked);
     } catch (e) {
       void message(`Could not open project:\n${e}`, { title: "Open failed", kind: "error" });
     }
@@ -71,6 +73,11 @@ export default function TopBar({
       await saveProject(target, project);
       setPath(target);
       markSaved();
+      // The snapshot the session was writing to is now redundant — and after
+      // Save As that is the old file's (or the untitled buffer's) snapshot.
+      void clearAutosave(target).catch((e: unknown) => console.warn("autosave cleanup", e));
+      if (path !== target)
+        void clearAutosave(path).catch((e: unknown) => console.warn("autosave cleanup", e));
     } catch (e) {
       void message(`Save failed:\n${e}`, { title: "Save failed", kind: "error" });
     }

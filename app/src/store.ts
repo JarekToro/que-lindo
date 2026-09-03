@@ -118,6 +118,8 @@ export interface EditorState {
   playSlide(index: number): void;
   setPath(path: string | null): void;
   markSaved(): void;
+  /** A restored crash snapshot is unsaved work, however it entered the store. */
+  markDirty(): void;
   undo(): void;
   redo(): void;
 }
@@ -316,6 +318,10 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   markSaved() {
     set({ dirty: false });
+  },
+
+  markDirty() {
+    set({ dirty: true });
   },
 
   undo() {
