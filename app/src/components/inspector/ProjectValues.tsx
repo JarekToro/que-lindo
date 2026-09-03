@@ -33,6 +33,7 @@ export default function ProjectValues() {
               <span>{a.path.replace(/^.*[/\\]/, "")}</span>
               <button
                 title="Remove this track"
+                aria-label={`Remove music track ${a.path.replace(/^.*[/\\]/, "")}`}
                 onClick={() => mutate((p) => ({ ...p, audio: p.audio.filter((_, i) => i !== ai) }))}
               >
                 ✕

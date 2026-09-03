@@ -3,24 +3,33 @@ import { detectFocus, listFonts } from "../api";
 import { autoLayout, defaultText, lowerThird } from "../presets";
 import { useEditor } from "../store";
 import type { Cell, Layout, MediaItem, Slide, TextOverlay, TransitionKind } from "../types";
+import Menu from "./Menu";
 import { MOTIONS, motionLabel } from "./inspector/data";
 import ProjectValues from "./inspector/ProjectValues";
 import ValuesPane from "./inspector/ValuesPane";
 
-/** A row of outcome-level verb buttons. */
+/** A row of outcome-level verb buttons. `select` marks a row where exactly one
+ * option holds — the `.on` state is then also carried as aria-pressed. */
 function Verbs({
   label,
   options,
+  select = false,
 }: {
   label: string;
   options: { label: string; active: boolean; onPick: () => void }[];
+  select?: boolean;
 }) {
   return (
     <div className="verb-group" role="group" aria-label={label}>
       <span className="verb-label">{label}</span>
       <div className="verb-row">
         {options.map((o) => (
-          <button key={o.label} className={o.active ? "on" : ""} onClick={o.onPick}>
+          <button
+            key={o.label}
+            className={o.active ? "on" : ""}
+            aria-pressed={select ? o.active : undefined}
+            onClick={o.onPick}
+          >
             {o.label}
           </button>
         ))}
@@ -57,7 +66,7 @@ export default function Inspector() {
 
   if (!slide) {
     return (
-      <aside className="inspector">
+      <aside className="inspector" aria-label="Inspector">
         <p className="hint">No slide selected</p>
         <ProjectValues />
       </aside>
@@ -168,6 +177,7 @@ export default function Inspector() {
           <button
             className="ghost"
             title="Play just this slide, from its start"
+            aria-label={`Play slide ${index + 1} from its start`}
             onClick={() => playSlide(index)}
           >
             ▶ Slide
@@ -176,6 +186,7 @@ export default function Inspector() {
             <button
               className="ghost"
               title="Back to the slide"
+              aria-label="Back to the slide"
               onClick={() => {
                 selectCell(null);
                 selectText(null);
@@ -191,6 +202,7 @@ export default function Inspector() {
         <>
           <textarea
             rows={2}
+            aria-label="Text content"
             value={focusText.text}
             onChange={(e) => patchText(selectedText!, { text: e.target.value })}
           />
@@ -211,9 +223,10 @@ export default function Inspector() {
         </>
       ) : focusCell ? (
         <>
-          <Verbs label="Motion" options={motionVerbs(selectedCell!)} />
+          <Verbs label="Motion" select options={motionVerbs(selectedCell!)} />
           <Verbs
             label="Fit"
+            select
             options={[
               { label: "Fill", active: focusCell.fit === "cover", onPick: () => patchCell(selectedCell!, { fit: "cover" }) },
               { label: "Whole photo", active: focusCell.fit === "contain", onPick: () => patchCell(selectedCell!, { fit: "contain" }) },
@@ -223,10 +236,11 @@ export default function Inspector() {
         </>
       ) : (
         <>
-          {slide.cells.length === 1 && <Verbs label="Motion" options={motionVerbs(0)} />}
+          {slide.cells.length === 1 && <Verbs label="Motion" select options={motionVerbs(0)} />}
           {isGroup && (
             <Verbs
               label="Arrangement"
+              select
               options={groupLayouts.map((g) => ({
                 label: g.label,
                 active: JSON.stringify(g.make()) === JSON.stringify(slide.layout),
@@ -243,6 +257,7 @@ export default function Inspector() {
           />
           <Verbs
             label={index === 0 ? "Opens with" : "Arrives by"}
+            select
             options={[
               { label: "Cut", active: sameKind(slide.transition.kind, { type: "cut" }), onPick: () => setKind({ type: "cut" }) },
               { label: "Fade", active: sameKind(slide.transition.kind, { type: "cross_fade" }), onPick: () => setKind({ type: "cross_fade" }) },
@@ -254,6 +269,7 @@ export default function Inspector() {
           {index === project.slides.length - 1 && (
             <Verbs
               label="Ends with"
+              select
               options={(
                 [
                   ["Cut", { type: "cut" }],
@@ -285,14 +301,15 @@ export default function Inspector() {
                   {t.text.trim() ? `“${t.text.slice(0, 14)}${t.text.length > 14 ? "…" : ""}”` : t.role}
                 </button>
               ))}
-              <div className="menu">
-                <button>+ Add ▾</button>
-                <div className="menu-items">
-                  <button onClick={() => addText("title")}>Title</button>
-                  <button onClick={() => addText("caption")}>Caption</button>
-                  <button onClick={() => addText("lower")}>Lower third</button>
-                </div>
-              </div>
+              <Menu
+                label="+ Add ▾"
+                ariaLabel="Add text"
+                items={[
+                  { label: "Title", onPick: () => addText("title") },
+                  { label: "Caption", onPick: () => addText("caption") },
+                  { label: "Lower third", onPick: () => addText("lower") },
+                ]}
+              />
             </div>
           </div>
         </>
@@ -301,7 +318,7 @@ export default function Inspector() {
   );
 
   return (
-    <aside className="inspector">
+    <aside className="inspector" aria-label="Inspector">
       {outcome}
       <ValuesPane slide={slide} index={index} fonts={fonts} thumbFor={thumbFor} />
       <ProjectValues />

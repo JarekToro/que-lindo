@@ -48,12 +48,25 @@ function MemberStrip({
         const thumb = thumbFor(c);
         return (
           <span key={`c${ci}`} className={`member-chip ${selectedCell === ci ? "on" : ""}`}>
-            <button className="chip-body" title={cellName(c)} onClick={() => selectCell(ci)}>
-              {thumb ? <img src={thumb} alt="" /> : <span className="thumb-empty">▤</span>}
+            <button
+              className="chip-body"
+              title={cellName(c)}
+              aria-label={cellName(c)}
+              aria-pressed={selectedCell === ci}
+              onClick={() => selectCell(ci)}
+            >
+              {thumb ? (
+                <img src={thumb} alt="" />
+              ) : (
+                <span className="thumb-empty" aria-hidden="true">
+                  ▤
+                </span>
+              )}
             </button>
             <button
               className="chip-x"
               title="Remove from this slide"
+              aria-label={`Remove ${cellName(c)} from this slide`}
               onClick={() =>
                 updateSlide(index, { cells: slide.cells.filter((_, i) => i !== ci) })
               }
@@ -68,14 +81,19 @@ function MemberStrip({
           <button
             className="chip-body"
             title={t.text || t.role}
+            aria-label={`Text ${t.text.trim() || t.role}`}
+            aria-pressed={selectedText === ti}
             onClick={() => selectText(ti)}
           >
-            <span className="chip-t">T</span>
+            <span className="chip-t" aria-hidden="true">
+              T
+            </span>
             <span className="chip-label">{t.text.trim() ? t.text : t.role}</span>
           </button>
           <button
             className="chip-x"
             title="Remove this text"
+            aria-label={`Remove text ${t.text.trim() || t.role}`}
             onClick={() => updateSlide(index, { texts: slide.texts.filter((_, i) => i !== ti) })}
           >
             ✕
