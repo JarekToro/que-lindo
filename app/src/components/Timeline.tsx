@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { revealPath } from "../api";
 import { buildSlides, buildableMedia, needsRebuildConfirm } from "../autobuild";
 import { layoutRects } from "../layout";
+import { insertMark, markTime, markValue, moveMark, snapDurationsToMarks, trackAt } from "../marks";
 import { ensureAudioCtx, mixForRev } from "../mixcache";
 import {
   ANCHOR_POINTS,
@@ -58,6 +59,14 @@ function fmtClock(t: number): string {
   const s = Math.floor(t % 60);
   return `${m}:${String(s).padStart(2, "0")}`;
 }
+
+/** Beat marks are placed by ear, so their labels carry the tenth. */
+function fmtBeat(t: number): string {
+  return `${fmtClock(t)}.${Math.floor((Math.max(t, 0) % 1) * 10)}`;
+}
+
+/** One mark of one track, on the global clock. */
+type LaneMark = { track: number; index: number; at: number };
 
 /** Min/max peaks of the mix drawn into the lane canvas. `vertical` runs the
  * time axis top-to-bottom (side-docked timeline). */
@@ -306,6 +315,9 @@ export default function Timeline({
   const [panelW, setPanelW] = useState(280);
   const [confirmBuild, setConfirmBuild] = useState(false);
 
+  const [selectedMark, setSelectedMark] = useState<{ track: number; index: number } | null>(null);
+  const [snapNote, setSnapNote] = useState<string | null>(null);
+
   const panelId = useId();
   const gridRef = useRef<HTMLDivElement | null>(null);
   const bandRef = useRef<HTMLDivElement | null>(null);
@@ -452,6 +464,104 @@ export default function Timeline({
       strip.scrollLeft = Math.max(0, x - strip.clientWidth * 0.3);
     }
   }, [time, playing, mode, vertical]);
+
+  // ---- audio beat marks: the moments to land transitions on ----
+  // Every coordinate here is measured against `.time-content`, whose origin is
+  // time zero — the same box the seam markers and the playhead sit in.
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  // Every track's marks on one clock: each converts through its own placement,
+  // so a film cut to three songs marks and snaps as one list.
+  const marks = useMemo(() => {
+    const out: LaneMark[] = [];
+    project.audio.forEach((tr, track) =>
+      tr.markers.forEach((m, index) => out.push({ track, index, at: markTime(tr, m) })),
+    );
+    return out.sort((a, b) => a.at - b.at);
+  }, [project.audio]);
+
+  const pointerTime = (e: React.PointerEvent): number => {
+    const el = contentRef.current;
+    if (!el) return 0;
+    const r = el.getBoundingClientRect();
+    const pos = vertical ? e.clientY - r.top : e.clientX - r.left;
+    return Math.max(0, pos / PX_PER_SEC);
+  };
+
+  /** Marks ride the music, so a project with no track has nowhere to put one;
+   * a new mark joins whichever song is playing under that instant. */
+  const addMark = (at: number) => {
+    if (!project.audio.length) return;
+    const track = trackAt(project.audio, at, total, media);
+    const target = project.audio[track];
+    const { markers, index } = insertMark(target.markers, markValue(target, at));
+    mutate((p) => ({ ...p, audio: p.audio.map((a, i) => (i === track ? { ...a, markers } : a)) }));
+    setSelectedMark({ track, index });
+  };
+
+  const removeMark = (track: number, index: number) => {
+    mutate((p) => ({
+      ...p,
+      audio: p.audio.map((a, i) =>
+        i === track ? { ...a, markers: a.markers.filter((_, j) => j !== index) } : a,
+      ),
+    }));
+    setSelectedMark(null);
+  };
+
+  // A mark drag is one undo step: the first move opens it, the rest fold in.
+  const markDrag = useRef<{ track: number; index: number; opened: boolean } | null>(null);
+
+  const dragMarkTo = (at: number) => {
+    const st = markDrag.current;
+    if (!st) return;
+    // Moves can outrun renders, so read the live project, not this closure's.
+    const tr = useEditor.getState().project.audio[st.track];
+    if (!tr) return;
+    const next = moveMark(tr.markers, st.index, markValue(tr, at));
+    if (next.index === st.index && next.markers[next.index] === tr.markers[st.index]) return;
+    mutate(
+      (p) => ({
+        ...p,
+        audio: p.audio.map((a, i) => (i === st.track ? { ...a, markers: next.markers } : a)),
+      }),
+      { history: !st.opened },
+    );
+    st.opened = true;
+    st.index = next.index;
+    setSelectedMark({ track: st.track, index: next.index });
+  };
+
+  /** Nudge slide durations so transitions land on the marks — one undo step,
+   * and a quiet count of what actually made it. */
+  const snapNoteTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (snapNoteTimer.current !== null) window.clearTimeout(snapNoteTimer.current);
+    },
+    [],
+  );
+
+  const snapToMarks = () => {
+    if (!marks.length || !slides.length) return;
+    const result = snapDurationsToMarks({
+      durations: slides.map((s) => s.duration),
+      transitions: slides.map((s) =>
+        s.transition.kind.type === "cut" ? 0 : Math.max(s.transition.duration, 0),
+      ),
+      marks: marks.map((m) => m.at),
+    });
+    mutate((p) => ({
+      ...p,
+      slides: p.slides.map((s, i) => {
+        // Milliseconds are as fine as any of this gets; keep the file tidy.
+        const d = Math.round((result.durations[i] ?? s.duration) * 1000) / 1000;
+        return d === s.duration ? s : { ...s, duration: d };
+      }),
+    }));
+    setSnapNote(`${result.aligned} of ${result.total} aligned`);
+    if (snapNoteTimer.current !== null) window.clearTimeout(snapNoteTimer.current);
+    snapNoteTimer.current = window.setTimeout(() => setSnapNote(null), 4000);
+  };
 
   // ---- the "Not used" shelf: imported media the film doesn't reference ----
   const usedPaths = useMemo(() => {
@@ -1400,6 +1510,25 @@ export default function Timeline({
     </div>
   );
 
+  // One verb, sitting with the lane it acts on; the count that follows is a
+  // quiet receipt, not an announcement.
+  const snapControls = mode === "time" && (
+    <>
+      <button
+        onClick={snapToMarks}
+        disabled={!marks.length || !slides.length}
+        title="Nudge slide durations so transitions land on the marks"
+      >
+        ◆ Snap to marks
+      </button>
+      {snapNote && (
+        <span className="hint" role="status">
+          {snapNote}
+        </span>
+      )}
+    </>
+  );
+
   const collapseButton = face && (
     <button
       className="ghost"
@@ -1449,9 +1578,13 @@ export default function Timeline({
           </span>
         )}
         {face === "time" ? (
-          <div className="timeline-actions">{collapseButton}</div>
+          <div className="timeline-actions">
+            {snapControls}
+            {collapseButton}
+          </div>
         ) : (
           <div className="timeline-actions">
+            {snapControls}
             <button onClick={onImport}>+ Import</button>
             <button
               className={suggestBuild ? "primary" : ""}
@@ -1516,6 +1649,7 @@ export default function Timeline({
           onKeyDown={gridKeys}
         >
           <div
+            ref={contentRef}
             className="time-content"
             role="presentation"
             style={vertical ? { height: contentW } : { width: contentW }}
@@ -1551,7 +1685,13 @@ export default function Timeline({
             <div className="time-row" role="presentation">
               {cards}
             </div>
-            <div className="audio-lane">
+            <div
+              className={`audio-lane ${project.audio.length ? "markable" : ""}`}
+              title={project.audio.length ? "Click the music to mark a beat (M during playback)" : undefined}
+              onPointerDown={(e) => {
+                if (e.button === 0) addMark(pointerTime(e));
+              }}
+            >
               <canvas
                 ref={laneRef}
                 role="img"
@@ -1562,6 +1702,58 @@ export default function Timeline({
                 <span className="hint lane-hint">No music yet — add a track from “Not used”.</span>
               )}
             </div>
+            {marks.map((m) => {
+              const on = selectedMark?.track === m.track && selectedMark.index === m.index;
+              const pos = m.at * PX_PER_SEC;
+              return (
+                <Fragment key={`mark-${m.track}-${m.index}`}>
+                  {/* The hairline rises through the strip, so a mark that sits
+                      off its seam is plain to see. */}
+                  <span
+                    className={`mark-tick ${on ? "selected" : ""}`}
+                    style={vertical ? { top: pos } : { left: pos }}
+                    aria-hidden="true"
+                  />
+                  <button
+                    className={`mark-pin ${on ? "selected" : ""}`}
+                    style={vertical ? { top: pos } : { left: pos }}
+                    aria-pressed={on}
+                    aria-label={`Mark at ${fmtBeat(m.at)}`}
+                    title={`Mark at ${fmtBeat(m.at)} — drag to move, ⌫ to remove`}
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      if (e.button !== 0) return;
+                      markDrag.current = { track: m.track, index: m.index, opened: false };
+                      setSelectedMark({ track: m.track, index: m.index });
+                      try {
+                        e.currentTarget.setPointerCapture(e.pointerId);
+                      } catch {
+                        // Synthetic pointers have no capturable id.
+                      }
+                    }}
+                    onPointerMove={(e) => {
+                      if (markDrag.current && e.buttons & 1) dragMarkTo(pointerTime(e));
+                    }}
+                    onPointerUp={() => {
+                      markDrag.current = null;
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Backspace" && e.key !== "Delete") return;
+                      // The strip's own delete removes slides; this one is the mark's.
+                      e.preventDefault();
+                      e.stopPropagation();
+                      removeMark(m.track, m.index);
+                    }}
+                  >
+                    <span>
+                      <svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
+                        <path d="M5 0 L10 5 L5 10 L0 5 Z" fill="currentColor" />
+                      </svg>
+                    </span>
+                  </button>
+                </Fragment>
+              );
+            })}
             {slides.map((s, i) => {
               if (s.transition.kind.type === "cut") return null;
               const seam = `${i === 0 ? "Opens with" : TRANSITION_NAMES[s.transition.kind.type] ?? "Transition"}${i === 0 ? ` (${TRANSITION_NAMES[s.transition.kind.type]?.toLowerCase() ?? "fade"})` : ""} · ${s.transition.duration.toFixed(1)}s`;

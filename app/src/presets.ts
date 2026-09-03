@@ -214,6 +214,7 @@ export function audioTrackFor(media: ImportedMedia): AudioTrack {
     fade_in: 1.5,
     fade_out: 3,
     loop: true,
+    markers: [],
   };
 }
 
