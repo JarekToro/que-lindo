@@ -199,7 +199,8 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 
 /* The layout picker: mini-diagrams drawn from the real layout math. */
 .layout-picker { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
-.variant-row { grid-column: 2 / -1; display: inline-flex; gap: 4px; justify-self: start; }
+.variant-row { grid-column: 2 / -1; display: inline-flex; gap: 4px; justify-self: start; align-items: stretch; flex-wrap: wrap; }
+.pile-auto { height: 34px; }
 .layout-tile {
   position: relative; width: 56px; height: 32px; padding: 0; flex-shrink: 0;
   background: #000; border: 1px solid var(--line); border-radius: 4px;

@@ -6,7 +6,6 @@ import { useState } from "react";
 import { detectFocus } from "../../api";
 import {
   activeScatterVariant,
-  plainScatterPatch,
   scatterState,
   scatterVariantPatch,
   scatterVariants,
@@ -128,77 +127,60 @@ export function MemberStrip({
   );
 }
 
-/** Scatter's own controls, shown while the slide is on a pile. Smart lets
- * the face scorer pick the variant and the deal; Manual hands the variant
- * choice back to the user (plain table-order deal of the picked pile). */
+/** Scatter's own controls, shown while the slide is on a pile: the variant
+ * tiles are the manual choice, and Auto is an action — one press finds the
+ * pile and deal that keep detected faces uncovered, then it's done. */
 function ScatterRow({ slide, index }: { slide: Slide; index: number }) {
   const media = useEditor((s) => s.media);
   const updateSlide = useEditor((s) => s.updateSlide);
-  const state = scatterState(slide);
-  if (state === "off") return null;
-  const mode = state === "smart" ? "smart" : "manual";
+  if (scatterState(slide) === "off") return null;
   const variants = scatterVariants(slide.cells.length);
   const active = activeScatterVariant(slide);
   return (
-    <>
-      <Segmented
-        label="Pile"
-        options={[
-          {
-            label: "Smart",
-            value: "smart",
-            title: "Pick the pile and arrangement that keep detected faces uncovered",
-          },
-          {
-            label: "Manual",
-            value: "manual",
-            title: "Choose the pile yourself; photos keep their order",
-          },
-        ]}
-        value={mode}
-        onChange={(v) => {
-          const patch =
-            v === "smart" ? smartScatterPatch(slide, media) : plainScatterPatch(slide);
-          if (patch) updateSlide(index, patch);
-        }}
-      />
-      {mode === "manual" && variants.length > 1 && (
-        <div className="vrow">
-          <span className="vlabel">Variant</span>
-          <span className="variant-row" role="group" aria-label="Scatter variant">
-            {variants.map((v, vi) => (
-              <button
-                key={vi}
-                className={`layout-tile ${vi === active ? "on" : ""}`}
-                title={`Pile ${v.label}`}
-                aria-label={`Pile ${v.label}`}
-                aria-pressed={vi === active}
-                onClick={() => {
-                  const patch = scatterVariantPatch(slide, vi);
-                  if (patch) updateSlide(index, patch);
-                }}
-              >
-                {layoutRects({ type: "custom", rects: v.rects }, slide.cells.length, 56, 32, 0, 0.03).map(
-                  (r, ci) => (
-                    <span
-                      key={ci}
-                      className="lt-cell"
-                      style={{
-                        left: r.x,
-                        top: r.y,
-                        width: Math.max(r.w, 2),
-                        height: Math.max(r.h, 2),
-                        transform: `rotate(${v.angles[ci % v.angles.length]}deg)`,
-                      }}
-                    />
-                  ),
-                )}
-              </button>
-            ))}
-          </span>
-        </div>
-      )}
-    </>
+    <div className="vrow">
+      <span className="vlabel">Pile</span>
+      <span className="variant-row" role="group" aria-label="Pile">
+        <button
+          className="pile-auto"
+          title="Find the pile and arrangement that keep detected faces uncovered"
+          onClick={() => {
+            const patch = smartScatterPatch(slide, media);
+            if (patch) updateSlide(index, patch);
+          }}
+        >
+          Auto
+        </button>
+        {variants.map((v, vi) => (
+          <button
+            key={vi}
+            className={`layout-tile ${vi === active ? "on" : ""}`}
+            title={`Pile ${v.label}`}
+            aria-label={`Pile ${v.label}`}
+            aria-pressed={vi === active}
+            onClick={() => {
+              const patch = scatterVariantPatch(slide, vi);
+              if (patch) updateSlide(index, patch);
+            }}
+          >
+            {layoutRects({ type: "custom", rects: v.rects }, slide.cells.length, 56, 32, 0, 0.03).map(
+              (r, ci) => (
+                <span
+                  key={ci}
+                  className="lt-cell"
+                  style={{
+                    left: r.x,
+                    top: r.y,
+                    width: Math.max(r.w, 2),
+                    height: Math.max(r.h, 2),
+                    transform: `rotate(${v.angles[ci % v.angles.length]}deg)`,
+                  }}
+                />
+              ),
+            )}
+          </button>
+        ))}
+      </span>
+    </div>
   );
 }
 
