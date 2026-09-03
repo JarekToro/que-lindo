@@ -34,7 +34,7 @@ import type { Cell, MediaInfo, MediaItem, Slide } from "../types";
 
 /** What a pointer drag is carrying. */
 type DragPayload =
-  | { kind: "slide"; index: number }
+  | { kind: "slide"; index: number; indices?: number[] }
   | { kind: "media"; path: string }
   | { kind: "member"; slide: number; member: Member }
   | { kind: "text" };
@@ -312,6 +312,8 @@ export default function Timeline({
   const [memberFocus, setMemberFocus] = useState(0);
   const [drop, setDrop] = useState<DropZone | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
+  /** Every index riding along in a multi-selection drag. */
+  const [draggingIdxs, setDraggingIdxs] = useState<number[]>([]);
   const [shelfOpen, setShelfOpen] = useState(true);
   const [cols, setCols] = useState(6);
   const [panelW, setPanelW] = useState(280);
@@ -627,6 +629,32 @@ export default function Timeline({
     move(from, to);
   };
 
+  /** Move several slides (kept in their relative order) to one insertion
+   * point — the multi-selection drag. */
+  const moveSlides = (idxs: number[], insertAt: number) => {
+    if (!idxs.length) return;
+    const picked = new Set(idxs);
+    // The insertion index counts only the slides that stay behind.
+    const at = insertAt - idxs.filter((i) => i < insertAt).length;
+    mutate((p) => {
+      const moved = idxs.map((i) => p.slides[i]).filter(Boolean);
+      const rest = p.slides.filter((_, i) => !picked.has(i));
+      rest.splice(at, 0, ...moved);
+      return { ...p, slides: rest };
+    });
+    setSelection(idxs.map((i) => slides[i].id).filter(Boolean), at);
+  };
+
+  /** Merge a dragged multi-selection into the drop target's collage. */
+  const bindMany = (targetIdx: number, idxs: number[]) => {
+    const sources = idxs.filter((i) => i !== targetIdx);
+    const all = [targetIdx, ...sources];
+    const withMembers = all.filter((i) => membersOf(slides[i]).length > 0);
+    const cells = withMembers.flatMap((i) => slides[i].cells);
+    if (withMembers.length < 2 || cells.length > GROUP_MAX) return;
+    mergeSlides(all.sort((a, b) => a - b));
+  };
+
   /** Bind: source slide's members — photos and titles — join the target. */
   const bind = (targetIdx: number, sourceIdx: number) => {
     if (targetIdx === sourceIdx) return;
@@ -753,6 +781,67 @@ export default function Timeline({
       shiftAnchor.current = i;
       selectSlide(i);
     }
+  };
+
+  // ---- marquee: drag on the grid background rubber-bands a selection ----
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(
+    null,
+  );
+  const marqueeBase = useRef<string[]>([]);
+  /** Drag origin, in viewport px; null when no marquee is active. State
+   * (`marquee`) only drives the painted rectangle — the origin lives here so
+   * a move landing in the same frame as the press still sees it. */
+  const marqueeFrom = useRef<{ x: number; y: number } | null>(null);
+
+  const marqueeHits = (r: { x0: number; y0: number; x1: number; y1: number }): string[] => {
+    const L = Math.min(r.x0, r.x1);
+    const R = Math.max(r.x0, r.x1);
+    const T = Math.min(r.y0, r.y1);
+    const B = Math.max(r.y0, r.y1);
+    const hits: string[] = [];
+    cardRefs.current.forEach((el, i) => {
+      const b = el.getBoundingClientRect();
+      if (b.left < R && b.right > L && b.top < B && b.bottom > T && slides[i]) {
+        hits.push(slides[i].id);
+      }
+    });
+    return hits;
+  };
+
+  const marqueeDown = (e: React.PointerEvent) => {
+    // Only a press on the grid itself (between cards) starts a marquee.
+    if (e.button !== 0 || e.target !== e.currentTarget) return;
+    marqueeFrom.current = { x: e.clientX, y: e.clientY };
+    marqueeBase.current = e.shiftKey || e.metaKey || e.ctrlKey ? selectedIds : [];
+    setMarquee({ x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY });
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Synthetic pointers have no capturable id; moves still bubble here.
+    }
+  };
+
+  const marqueeMove = (e: React.PointerEvent) => {
+    const from = marqueeFrom.current;
+    if (!from) return;
+    const next = { x0: from.x, y0: from.y, x1: e.clientX, y1: e.clientY };
+    setMarquee(next);
+    const ids = [...new Set([...marqueeBase.current, ...marqueeHits(next)])];
+    if (ids.length) {
+      const anchor = slides.findIndex((sl) => sl.id === ids[ids.length - 1]);
+      setSelection(ids, anchor >= 0 ? anchor : selected);
+    }
+  };
+
+  const marqueeUp = (e: React.PointerEvent) => {
+    const from = marqueeFrom.current;
+    if (!from) return;
+    marqueeFrom.current = null;
+    // A plain background click (no real drag) collapses the selection.
+    if (Math.hypot(e.clientX - from.x, e.clientY - from.y) < 4 && !marqueeBase.current.length) {
+      selectSlide(selected, false);
+    }
+    setMarquee(null);
   };
 
   /** Hide: the slides leave the film; their photos stay on the shelf. */
@@ -969,6 +1058,7 @@ export default function Timeline({
 
   const dragLabel = (p: DragPayload): string => {
     if (p.kind === "slide") {
+      if (p.indices && p.indices.length > 1) return `${p.indices.length} slides`;
       const s = slides[p.index];
       const n = s ? membersOf(s).length : 0;
       return n > 1 ? `Group of ${n}` : `Slide ${p.index + 1}`;
@@ -1005,12 +1095,14 @@ export default function Timeline({
         return;
       }
       if (payload.kind === "slide") {
-        const src = slides[payload.index];
+        const idxs = payload.indices ?? [payload.index];
+        const srcs = idxs.filter((i) => i !== openIdx).map((i) => slides[i]).filter(Boolean);
+        const cellCount = srcs.reduce((a, sl) => a + sl.cells.length, 0);
         const fits =
-          payload.index !== openIdx &&
-          src &&
-          openGroup.cells.length + src.cells.length <= GROUP_MAX &&
-          membersOf(src).length > 0;
+          srcs.length > 0 &&
+          !idxs.includes(openIdx) &&
+          openGroup.cells.length + cellCount <= GROUP_MAX &&
+          srcs.some((sl) => membersOf(sl).length > 0);
         setDropBoth(fits ? { kind: "band" } : null);
         return;
       }
@@ -1054,9 +1146,13 @@ export default function Timeline({
           ? { kind: "insert", index: i + 1 }
           : { kind: "bind", index: i };
     if (zone.kind === "bind") {
-      const sourceCells = payload.kind === "slide" ? slides[payload.index]?.cells.length ?? 1 : 1;
+      const packIdxs = payload.kind === "slide" ? payload.indices ?? [payload.index] : [];
+      const sourceCells =
+        payload.kind === "slide"
+          ? packIdxs.reduce((a, j) => a + (slides[j]?.cells.length ?? 0), 0)
+          : 1;
       const overfull = slides[i].cells.length + sourceCells > GROUP_MAX;
-      const self = payload.kind === "slide" && payload.index === i;
+      const self = payload.kind === "slide" && packIdxs.includes(i);
       // A bind that would overfill (or target itself) falls back to inserting.
       if (overfull || self) zone = { kind: "insert", index: i + 1 };
     }
@@ -1164,6 +1260,7 @@ export default function Timeline({
     if (!st) return;
     if (!ghost && Math.hypot(e.clientX - st.x, e.clientY - st.y) < 5) return;
     if (st.payload.kind === "slide") setDragging(st.payload.index);
+    if (st.payload.kind === "slide" && st.payload.indices) setDraggingIdxs(st.payload.indices);
     const p = st.payload;
     const carriesCells =
       p.kind === "media" ||
@@ -1187,6 +1284,7 @@ export default function Timeline({
     stopAutoScroll();
     setGhost(null);
     setDragging(null);
+    setDraggingIdxs([]);
     setDropBoth(null);
     setShelfHot(false);
     if (!st || !wasDragging) return; // a plain click — handled by onClick
@@ -1203,11 +1301,22 @@ export default function Timeline({
       return;
     }
     if (zone?.kind === "band" && openIdx >= 0) {
-      if (p.kind === "slide") bind(openIdx, p.index);
-      else bindMedia(openIdx, p.path);
+      if (p.kind === "slide") {
+        const idxs = p.indices ?? [p.index];
+        if (idxs.length > 1) bindMany(openIdx, idxs);
+        else bind(openIdx, p.index);
+      } else bindMedia(openIdx, p.path);
       return;
     }
     if (p.kind === "slide") {
+      const idxs = p.indices ?? [p.index];
+      if (idxs.length > 1) {
+        if (over.shelf) hideSlides(idxs);
+        else if (zone?.kind === "bind") bindMany(zone.index, idxs);
+        else if (zone?.kind === "insert") moveSlides(idxs, zone.index);
+        else if (over.grid) moveSlides(idxs, slides.length);
+        return;
+      }
       if (over.shelf) removeSlide(p.index);
       else if (zone?.kind === "bind") bind(zone.index, p.index);
       else if (zone?.kind === "insert") reorder(p.index, zone.index);
@@ -1428,7 +1537,7 @@ export default function Timeline({
           isReceiving ? "receiving" : "",
           insertBefore ? "insert-before" : "",
           insertAfter ? "insert-after" : "",
-          dragging === i ? "dragging" : "",
+          dragging === i || draggingIdxs.includes(i) ? "dragging" : "",
           proportional ? "proportional" : "",
         ].join(" ")}
         style={proportional ? (vertical ? { height: widths[i] } : { width: widths[i] }) : undefined}
@@ -1439,7 +1548,14 @@ export default function Timeline({
         aria-selected={selectedIds.includes(s.id)}
         aria-label={`Slide ${i + 1} of ${slides.length}${membersOf(s).length > 1 ? `, group of ${membersOf(s).length}` : ""}${proportional ? `, ${s.duration.toFixed(1)} seconds` : ""}`}
         data-index={i}
-        onPointerDown={(e) => beginDrag(e, { kind: "slide", index: i })}
+        onPointerDown={(e) =>
+          beginDrag(e, {
+            kind: "slide",
+            index: i,
+            indices:
+              selectedIdxs.length > 1 && selectedIds.includes(s.id) ? selectedIdxs : undefined,
+          })
+        }
         onPointerMove={moveDrag}
         onPointerUp={endDrag}
         onClick={(e) => clickCard(e, i)}
@@ -1637,6 +1753,9 @@ export default function Timeline({
           aria-multiselectable="true"
           aria-label="Slides in playback order"
           onKeyDown={gridKeys}
+          onPointerDown={marqueeDown}
+          onPointerMove={marqueeMove}
+          onPointerUp={marqueeUp}
         >
           {slides.length === 0 && (
             <p className="hint center empty-grid">
@@ -1911,6 +2030,18 @@ export default function Timeline({
         </div>
       )}
 
+      {marquee && (
+        <div
+          className="marquee"
+          style={{
+            left: Math.min(marquee.x0, marquee.x1),
+            top: Math.min(marquee.y0, marquee.y1),
+            width: Math.abs(marquee.x1 - marquee.x0),
+            height: Math.abs(marquee.y1 - marquee.y0),
+          }}
+          aria-hidden="true"
+        />
+      )}
       {ghost && (
         <div className="drag-ghost" style={{ left: ghost.x + 14, top: ghost.y + 12 }} aria-hidden="true">
           {ghost.label}
