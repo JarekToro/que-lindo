@@ -23,14 +23,18 @@ fi
 
 mkdir -p media out
 
-# The label burned into each frame is a human convenience — specs match
-# fixtures by filename — and drawtext needs libfreetype, which some static
-# builds omit. Fall back to a plain colour field rather than failing.
-if "$FFMPEG" -hide_banner -filters 2>/dev/null | grep -qw drawtext; then
+# Frames need visible detail: several specs assert that a zoom or crop change
+# alters the rendered frame, and a flat colour field is identical under any
+# such transform. drawtext supplies that detail but needs libfreetype and a
+# font, so probe it by actually running it — `-filters | grep -q` trips SIGPIPE
+# under `set -o pipefail`, and would miss a fontless build either way. The
+# fallback draws boxes instead, which every build can do.
+if "$FFMPEG" -v error -f lavfi -i "color=c=black:s=64x64" -frames:v 1 \
+     -vf "drawtext=text=probe:fontsize=12:fontcolor=white" -f null - >/dev/null 2>&1; then
   VF="drawtext=text='LABEL':fontsize=120:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2"
 else
-  echo "note: this ffmpeg has no drawtext filter — writing unlabelled frames" >&2
-  VF="null"
+  echo "note: no usable drawtext filter — labelling frames with boxes instead" >&2
+  VF="drawbox=x=iw*0.12:y=ih*0.12:w=iw*0.32:h=ih*0.26:color=white@0.95:t=fill,drawbox=x=iw*0.54:y=ih*0.56:w=iw*0.30:h=ih*0.28:color=black@0.75:t=fill"
 fi
 
 for spec in "red:1600x1000:ONE" "royalblue:1000x1500:TWO-portrait" "seagreen:1600x1000:THREE" "goldenrod:1200x1200:FOUR" "mediumpurple:1600x900:FIVE" "chocolate:1400x1000:SIX"; do
