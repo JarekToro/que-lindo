@@ -1,5 +1,7 @@
 # Que Lindo
 
+*pronounced keh LEEN-doh*
+
 A small, local slideshow-video maker. Drop in photos, clips and music; get an
 MP4 with collage layouts, gentle Ken Burns motion, titles and transitions.
 No account, no upload, no timeline editor to learn.
