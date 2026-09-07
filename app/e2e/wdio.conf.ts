@@ -48,9 +48,17 @@ export const config: WebdriverIO.Config = {
   logLevel: "warn",
   waitforTimeout: 15_000,
   onPrepare() {
-    if (!existsSync(BINARY)) {
-      throw new Error(`e2e binary missing at ${BINARY} — run \`npm run e2e:build\` in app/ first`);
+    // @wdio/cli logs a throw from here and then starts the workers anyway, so a
+    // single missing prerequisite turns into a full run of specs failing on
+    // absent fixtures. Exit instead, and leave the real reason as the last line.
+    try {
+      if (!existsSync(BINARY)) {
+        throw new Error(`e2e binary missing at ${BINARY} — run \`npm run e2e:build\` in app/ first`);
+      }
+      ensureFixtures();
+    } catch (err) {
+      console.error(`\ne2e setup failed: ${err instanceof Error ? err.message : String(err)}\n`);
+      process.exit(1);
     }
-    ensureFixtures();
   },
 };
