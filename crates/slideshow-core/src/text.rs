@@ -52,6 +52,42 @@ impl TextRenderer {
         names
     }
 
+    /// cosmic-text only uses a named family when a face matches the requested
+    /// weight exactly — any other weight silently falls back to the system
+    /// font ("Noteworthy at weight 400" rendered as SF, since Noteworthy
+    /// ships only 300 and 700). Snap the request to the nearest weight, and
+    /// to a style the family actually has, so the family always wins.
+    fn snap_to_family(&self, family: &str, weight: u16, italic: bool) -> (Weight, Style) {
+        let wanted = if italic { Style::Italic } else { Style::Normal };
+        let faces: Vec<(u16, Style)> = self
+            .font_system
+            .db()
+            .faces()
+            .filter(|f| f.families.iter().any(|(n, _)| n.eq_ignore_ascii_case(family)))
+            .map(|f| (f.weight.0, f.style))
+            .collect();
+        if faces.is_empty() {
+            return (Weight(weight), wanted);
+        }
+        let has = |s: Style| faces.iter().any(|&(_, fs)| fs == s);
+        let style = if has(wanted) {
+            wanted
+        } else if has(Style::Normal) {
+            Style::Normal
+        } else {
+            faces[0].1
+        };
+        let nearest = faces
+            .iter()
+            .filter(|&&(_, s)| s == style)
+            .map(|&(w, _)| w)
+            // Nearest available weight; on a tie the bolder face wins (a 500
+            // request against 400/600 reads better bold than light).
+            .min_by_key(|w| (w.abs_diff(weight), u16::MAX - w))
+            .unwrap_or(weight);
+        (Weight(nearest), style)
+    }
+
     /// Draw `overlay` into `ctx` (sized to the frame) with the given overall
     /// opacity (0..1, from timing fades and transitions). `text_margin`
     /// insets the anchor regions from the frame edges (the title-safe area).
@@ -76,10 +112,8 @@ impl TextRenderer {
             .font
             .clone()
             .unwrap_or_else(|| default_family(overlay.role).to_string());
-        let attrs = Attrs::new()
-            .family(Family::Name(&family))
-            .weight(Weight(overlay.weight))
-            .style(if overlay.italic { Style::Italic } else { Style::Normal });
+        let (weight, style) = self.snap_to_family(&family, overlay.weight, overlay.italic);
+        let attrs = Attrs::new().family(Family::Name(&family)).weight(weight).style(style);
 
         let align = match overlay.align {
             Align::Left => cosmic_text::Align::Left,
@@ -282,6 +316,44 @@ mod tests {
         assert!(left < center - 20.0, "left {left} vs center {center}");
         assert!(right > center + 20.0, "right {right} vs center {center}");
         assert!((center - 320.0).abs() < 30.0, "center {center}");
+    }
+
+    #[test]
+    fn off_weight_requests_stay_in_the_family() {
+        // Crimson Text ships 400 and 600 only; a request off those weights
+        // must snap to the nearest, not fall out of the family.
+        let tr = TextRenderer::new();
+        let (w, _) = tr.snap_to_family(SERIF_FAMILY, 300, false);
+        assert_eq!(w, Weight(400));
+        let (w, _) = tr.snap_to_family(SERIF_FAMILY, 700, false);
+        assert_eq!(w, Weight(600));
+        // Unknown family: the request passes through untouched.
+        let (w, s) = tr.snap_to_family("No Such Family", 550, true);
+        assert_eq!((w, s), (Weight(550), Style::Italic));
+    }
+
+    #[test]
+    fn snapped_attrs_resolve_to_the_named_family() {
+        let mut tr = TextRenderer::new();
+        let (weight, style) = tr.snap_to_family(SERIF_FAMILY, 300, false);
+        let attrs = Attrs::new()
+            .family(Family::Name(SERIF_FAMILY))
+            .weight(weight)
+            .style(style);
+        let mut buffer = Buffer::new(&mut tr.font_system, Metrics::new(40.0, 48.0));
+        buffer.set_size(Some(800.0), None);
+        buffer.set_text("Names", &attrs, Shaping::Advanced, None);
+        buffer.shape_until_scroll(&mut tr.font_system, false);
+        for run in buffer.layout_runs() {
+            for g in run.glyphs.iter() {
+                let face = tr.font_system.db().face(g.font_id).expect("face");
+                assert!(
+                    face.families.iter().any(|(n, _)| n == SERIF_FAMILY),
+                    "fell back to {:?}",
+                    face.families
+                );
+            }
+        }
     }
 
     #[test]

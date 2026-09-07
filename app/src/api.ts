@@ -31,6 +31,24 @@ export const loadProject = (path: string) => invoke<Project>("load_project", { p
 export const saveProject = (path: string, project: Project) =>
   invoke<void>("save_project", { path, project });
 export const revealPath = (path: string) => invoke<void>("reveal_path", { path });
+
+/** An application the OS lists as able to edit a given file. */
+export interface EditorApp {
+  name: string;
+  path: string;
+}
+
+/** Apps registered as editors for this file — default first, rest
+ * alphabetical. Empty on platforms without such a registry. */
+export const editApps = (path: string) => invoke<EditorApp[]>("edit_apps", { path });
+
+/** Open the file in an app to edit it (null = OS default). */
+export const openInApp = (path: string, app: string | null) =>
+  invoke<void>("open_in_app", { path, app });
+
+/** Which externally-edited files changed on disk since launch/last check.
+ * Changed ones are purged from the backend preview caches. */
+export const changedMedia = (paths: string[]) => invoke<string[]>("changed_media", { paths });
 export const cancelExport = () => invoke<void>("cancel_export");
 export const exportVideo = (project: Project, outPath: string, scale: number, crf: number) =>
   invoke<void>("export_video", { project, outPath, scale, crf });
