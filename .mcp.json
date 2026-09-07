@@ -4,7 +4,7 @@
       "command": "npx",
       "args": ["-y", "tauri-plugin-mcp-server@0.3.1"],
       "env": {
-        "TAURI_MCP_IPC_PATH": "/tmp/slideshow-studio-mcp.sock"
+        "TAURI_MCP_IPC_PATH": "/tmp/que-lindo-mcp.sock"
       }
     }
   }

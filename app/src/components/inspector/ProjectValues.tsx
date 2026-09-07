@@ -3,7 +3,10 @@
 
 import { useEditor } from "../../store";
 import type { AudioTrack, MediaItem, Project } from "../../types";
-import { ColorField, NumField, Segmented, SliderField, VGroup } from "./fields";
+import { trackLength } from "../../marks";
+import { ColorField, NumField, SliderField, VGroup } from "./fields";
+
+const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
 
 /** Where the music bed ends on the timeline: the latest end across all
  * non-looping tracks (explicit duration, else file length minus the seek
@@ -30,6 +33,8 @@ export default function ProjectValues() {
   const mutate = useEditor((s) => s.mutate);
   const media = useEditor((s) => s.media);
   const timing = useEditor((s) => s.timing);
+  const selectTrack = useEditor((s) => s.selectTrack);
+  const selectedTrack = useEditor((s) => s.selectedTrack);
 
   // Scale every slide's time-on-screen so the film ends with the music.
   // Transition and outro spans stay fixed, so the delta lands entirely on
@@ -52,11 +57,12 @@ export default function ProjectValues() {
     }));
   };
 
-  const patchAudio = (ai: number, patch: Partial<AudioTrack>) =>
-    mutate((p) => ({
-      ...p,
-      audio: p.audio.map((a, i) => (i === ai ? { ...a, ...patch } : a)),
-    }));
+  const spanOf = (track: AudioTrack): string => {
+    const item = media.find((m) => m.path === track.path);
+    const source = item?.status === "ready" && item.info.duration > 0 ? item.info.duration : undefined;
+    const len = trackLength(track, timing?.total ?? 0, source);
+    return `${fmt(track.start)} – ${fmt(track.start + len)}${track.loop ? " · loops" : ""}`;
+  };
 
   return (
     <details className="values">
@@ -68,39 +74,36 @@ export default function ProjectValues() {
       </summary>
       <VGroup label="Music">
         {project.audio.length === 0 && (
-          <p className="hint">Add music from the “Not used” shelf (+ Music).</p>
+          <p className="hint">Add music from the “Not used” shelf (+ Music). Add more than one and each new song starts as the last one ends, fading across.</p>
         )}
-        {project.audio.map((a, ai) => (
-          <div key={ai} className="sub-card">
-            <div className="sub-head">
-              <span>{a.path.replace(/^.*[/\\]/, "")}</span>
-              <button
-                title="Remove this track"
-                aria-label={`Remove music track ${a.path.replace(/^.*[/\\]/, "")}`}
-                onClick={() => mutate((p) => ({ ...p, audio: p.audio.filter((_, i) => i !== ai) }))}
-              >
-                ✕
-              </button>
+        {project.audio.map((a, ai) => {
+          const name = a.path.replace(/^.*[/\\]/, "");
+          return (
+            <div key={ai} className={`sub-card ${selectedTrack === ai ? "selected" : ""}`}>
+              <div className="sub-head">
+                <button
+                  className="ghost"
+                  title="Edit this track — start, end, fades, gain"
+                  aria-label={`Edit music track ${name}`}
+                  onClick={() => selectTrack(ai)}
+                >
+                  {name}
+                </button>
+                <button
+                  title="Remove this track"
+                  aria-label={`Remove music track ${name}`}
+                  onClick={() => {
+                    if (selectedTrack === ai) selectTrack(null);
+                    mutate((p) => ({ ...p, audio: p.audio.filter((_, i) => i !== ai) }));
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="hint">{spanOf(a)}</p>
             </div>
-            <NumField label="Start at" value={a.start} min={0} max={9999} step={0.5} display="s"
-              onChange={(start) => patchAudio(ai, { start })} />
-            <SliderField label="Gain" value={a.gain_db} min={-40} max={12} step={1} display="dB"
-              onChange={(gain_db) => patchAudio(ai, { gain_db })} />
-            <SliderField label="Fade in" value={a.fade_in} min={0} max={20} step={0.5} display="s"
-              onChange={(fade_in) => patchAudio(ai, { fade_in })} />
-            <SliderField label="Fade out" value={a.fade_out} min={0} max={20} step={0.5} display="s"
-              onChange={(fade_out) => patchAudio(ai, { fade_out })} />
-            <Segmented
-              label="Loop"
-              options={[
-                { label: "Off", value: "off" },
-                { label: "On", value: "on" },
-              ]}
-              value={a.loop ? "on" : "off"}
-              onChange={(v) => patchAudio(ai, { loop: v === "on" })}
-            />
-          </div>
-        ))}
+          );
+        })}
         {project.audio.length > 0 && (
           <div className="vrow">
             <span className="vlabel">Timing</span>

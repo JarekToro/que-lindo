@@ -6,7 +6,7 @@ members = ["crates/slideshow-core", "crates/slideshow-cli", "app/src-tauri"]
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/JarekToro/memorial-slideshow-gen"
+repository = "https://github.com/JarekToro/que-lindo"
 
 [workspace.dependencies]
 anyhow = "1.0"

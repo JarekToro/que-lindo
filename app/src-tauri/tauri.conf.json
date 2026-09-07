@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Slideshow Studio",
+  "productName": "Que Lindo",
   "version": "0.1.0",
-  "identifier": "com.jarektoro.slideshow-studio",
+  "identifier": "com.jarektoro.quelindo",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -10,9 +10,10 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Slideshow Studio",
+        "title": "Que Lindo",
         "width": 1480,
         "height": 920,
         "minWidth": 1100,

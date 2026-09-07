@@ -99,7 +99,7 @@ export default function TopBar({
   return (
     <header className="topbar">
       <div className="topbar-group">
-        <h1 className="brand">Slideshow Studio</h1>
+        <h1 className="brand">Que Lindo</h1>
         <button onClick={doNew}>New</button>
         <button onClick={doOpen}>Open…</button>
         <button onClick={() => doSave(false)}>Save</button>

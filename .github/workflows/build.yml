@@ -53,10 +53,38 @@ jobs:
       - name: Upload bundles
         uses: actions/upload-artifact@v4
         with:
-          name: slideshow-studio-${{ matrix.os }}
+          name: que-lindo-${{ matrix.os }}
           path: |
             target/release/bundle/**/*.dmg
             target/release/bundle/**/*.app.tar.gz
             target/release/bundle/**/*.msi
             target/release/bundle/**/*.exe
           if-no-files-found: warn
+
+  e2e:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch ffmpeg sidecar
+        run: scripts/fetch-ffmpeg.sh aarch64-apple-darwin
+      - name: Install frontend deps
+        working-directory: app
+        run: npm ci
+      - name: Build the e2e binary
+        working-directory: app
+        run: npm run e2e:build
+      - name: Run WebdriverIO suites
+        working-directory: app
+        run: npm run e2e
+      - name: Upload e2e logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs
+          path: app/e2e/logs
+          if-no-files-found: ignore

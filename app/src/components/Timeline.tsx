@@ -1,12 +1,13 @@
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { revealPath } from "../api";
+import { beginExternalEdit, editorAppsFor, prefetchEditorApps } from "../editExternal";
 import { buildSlides, buildableMedia, needsRebuildConfirm } from "../autobuild";
 import { layoutRects } from "../layout";
-import { insertMark, markTime, markValue, moveMark, snapDurationsToMarks, trackAt } from "../marks";
+import { insertMark, markTime, markValue, moveMark, snapDurationsToMarks, trackAt, trackLength } from "../marks";
 import { ensureAudioCtx, mixForRev } from "../mixcache";
 import {
   ANCHOR_POINTS,
-  audioTrackFor,
+  appendMusic,
   autoLayout,
   bindSlides,
   defaultSlide,
@@ -22,7 +23,7 @@ import {
 import type { Member } from "../presets";
 import Splitter from "./Splitter";
 import { useEditor } from "../store";
-import type { Cell, MediaInfo, MediaItem, Slide } from "../types";
+import type { AudioTrack, Cell, MediaInfo, MediaItem, Slide } from "../types";
 
 /**
  * The timeline — the mode-carrying surface under the frame. Arrange is a
@@ -428,8 +429,13 @@ export default function Timeline({
   // The audio lane draws the real mix — the same PCM the preview plays.
   const laneRef = useRef<HTMLCanvasElement | null>(null);
   const [hasMix, setHasMix] = useState(false);
+  // `timing` is null until the first project sync lands. Before that the
+  // backend may still hold an earlier document (a reload keeps the process),
+  // and a mix fetched then carries its higher revision, which mixForRev would
+  // cache ahead of everything this page asks for.
+  const synced = timing !== null;
   useEffect(() => {
-    if (mode !== "time") return;
+    if (mode !== "time" || !synced) return;
     let dead = false;
     void mixForRev(ensureAudioCtx(), rev)
       .then((buffer) => {
@@ -441,7 +447,7 @@ export default function Timeline({
     return () => {
       dead = true;
     };
-  }, [mode, rev, contentW, vertical]);
+  }, [mode, rev, contentW, vertical, synced]);
 
   // Scrubbing on the ruler: proportional position is the playhead.
   const stripRef = useRef<HTMLDivElement | null>(null);
@@ -533,6 +539,67 @@ export default function Timeline({
     st.opened = true;
     st.index = next.index;
     setSelectedMark({ track: st.track, index: next.index });
+  };
+
+  // ---- music clips: where each track sits, dragged as a whole or by an edge ----
+  const selectedTrack = useEditor((s) => s.selectedTrack);
+  const selectTrack = useEditor((s) => s.selectTrack);
+  /** Timeline placement of every track, mirroring `plan_track`. */
+  const clipSpans = useMemo(
+    () =>
+      project.audio.map((t) => {
+        const item = media.find((m) => m.path === t.path);
+        const source = item?.status === "ready" && item.info.duration > 0 ? item.info.duration : undefined;
+        return { start: t.start, length: trackLength(t, total, source), source };
+      }),
+    [project.audio, media, total],
+  );
+  const CLIP_GRIP = 8;
+  const CLIP_MIN = 0.5;
+  // A clip drag is one undo step: the first move opens it, the rest fold in.
+  const clipDrag = useRef<{
+    track: number;
+    edge: "move" | "start" | "end";
+    grabAt: number;
+    orig: AudioTrack;
+    origLength: number;
+    source: number | undefined;
+    opened: boolean;
+  } | null>(null);
+
+  const dragClipTo = (at: number) => {
+    const st = clipDrag.current;
+    if (!st) return;
+    const dt = at - st.grabAt;
+    const o = st.orig;
+    let patch: Partial<AudioTrack>;
+    if (st.edge === "move") {
+      patch = { start: Math.max(0, o.start + dt) };
+    } else if (st.edge === "start") {
+      // Trimming the head keeps the music where it is: the file offset moves
+      // with the start, so marks (in file time) stay on their beats.
+      const maxShift = st.origLength - CLIP_MIN;
+      const shift = Math.min(Math.max(dt, -o.start, -o.offset), maxShift);
+      patch = {
+        start: o.start + shift,
+        offset: o.offset + shift,
+        duration: o.duration === null ? null : Math.max(CLIP_MIN, o.duration - shift),
+      };
+    } else {
+      let len = Math.max(CLIP_MIN, st.origLength + dt);
+      if (!o.loop && st.source !== undefined) len = Math.min(len, Math.max(CLIP_MIN, st.source - o.offset));
+      patch = { duration: Math.round(len * 100) / 100 };
+    }
+    patch = Object.fromEntries(
+      Object.entries(patch).map(([k, v]) => [k, typeof v === "number" ? Math.round(v * 100) / 100 : v]),
+    ) as Partial<AudioTrack>;
+    const live = useEditor.getState().project.audio[st.track];
+    if (!live || (Object.keys(patch) as (keyof AudioTrack)[]).every((k) => live[k] === patch[k])) return;
+    mutate(
+      (p) => ({ ...p, audio: p.audio.map((a, i) => (i === st.track ? { ...a, ...patch } : a)) }),
+      { history: !st.opened },
+    );
+    st.opened = true;
   };
 
   /** Nudge slide durations so transitions land on the marks — one undo step,
@@ -971,6 +1038,26 @@ export default function Timeline({
     setMenu({ x: Math.min(e.clientX, window.innerWidth - 230), y: Math.min(e.clientY, window.innerHeight - 200), entries });
   };
 
+  // Warm the "which apps edit this file type" cache so a right-click can
+  // build its entries synchronously (one OS query per extension).
+  useEffect(() => {
+    for (const m of media) if (m.status === "ready" && m.info.is_image) prefetchEditorApps(m.path);
+    for (const s of slides)
+      for (const c of s.cells) if (c.source.type === "image") prefetchEditorApps(c.source.path);
+  }, [media, slides]);
+
+  /** "Edit in <app>" entries for one photo (empty for non-image paths). */
+  const editEntries = (path: string): MenuEntry[] => {
+    const apps = editorAppsFor(path);
+    if (apps === null) return [{ label: "Edit in…", disabled: true, onPick: () => {} }];
+    if (!apps.length)
+      return [{ label: "Edit in default app", onPick: () => beginExternalEdit(path, null) }];
+    return apps.slice(0, 5).map((app) => ({
+      label: `Edit in ${app.name}`,
+      onPick: () => beginExternalEdit(path, app),
+    }));
+  };
+
   const cardMenu = (e: React.MouseEvent, i: number) => {
     const inSelection = selectedIds.includes(slides[i].id);
     const idxs = inSelection && selectedIdxs.length > 1 ? selectedIdxs : [i];
@@ -1008,6 +1095,13 @@ export default function Timeline({
       entries.push({ label: "Add title on this slide", onPick: () => addTitle(i) });
       entries.push({ label: "Duplicate", onPick: () => duplicate(i) });
       entries.push({ label: "Add blank slide after", onPick: () => insertSlides(i + 1, [defaultSlide()]) });
+      // One photo on the slide: offer to open it in an image editor. (A
+      // group's photos get this on the band-member menu instead.)
+      const photo = s.cells.length === 1 && s.cells[0].source.type === "image" ? s.cells[0].source.path : null;
+      if (photo) {
+        entries.push("sep");
+        entries.push(...editEntries(photo));
+      }
       entries.push("sep");
       entries.push({
         label: s.cells.length > 0 ? "Hide — move to “Not used”" : "Delete slide",
@@ -1023,11 +1117,27 @@ export default function Timeline({
       entries.push({ label: "Add to the timeline", onPick: () => insertSlides(slides.length, [slideForMedia(m)]) });
     }
     if (m.status === "ready" && m.info.has_audio && !m.info.has_video) {
-      entries.push({ label: "Add as music", onPick: () => mutate((p) => ({ ...p, audio: [...p.audio, audioTrackFor(m)] })) });
+      entries.push({ label: "Add as music", onPick: () => mutate((p) => ({ ...p, audio: appendMusic(p, m, media, total) })) });
     }
+    if (m.status === "ready" && m.info.is_image) entries.push(...editEntries(m.path));
     entries.push({ label: "Reveal in Finder", onPick: () => void revealPath(m.path) });
     entries.push("sep");
     entries.push({ label: "Remove from project", onPick: () => removeMedia(m.path) });
+    openMenu(e, entries);
+  };
+
+  /** The music lane's menu: one removal entry per track. A removed track takes
+   * its beat marks with it, and the file drops back onto the "Not used" shelf. */
+  const laneMenu = (e: React.MouseEvent) => {
+    if (!project.audio.length) return;
+    const entries: MenuEntry[] = project.audio.map((a, i) => ({
+      label: `Remove “${a.path.replace(/^.*[/\\]/, "")}”`,
+      onPick: () => {
+        setSelectedMark(null);
+        selectTrack(null);
+        mutate((p) => ({ ...p, audio: p.audio.filter((_, j) => j !== i) }));
+      },
+    }));
     openMenu(e, entries);
   };
 
@@ -1466,11 +1576,13 @@ export default function Timeline({
                   selectText(m.index);
                 }
               }}
-              onContextMenu={(e) =>
+              onContextMenu={(e) => {
+                const src = m.type === "cell" ? openGroup.cells[m.index].source : null;
                 openMenu(e, [
                   { label: "Split into its own slide", onPick: () => splitMember(openIdx, m) },
-                ])
-              }
+                  ...(src?.type === "image" ? ["sep" as const, ...editEntries(src.path)] : []),
+                ]);
+              }}
             >
               {m.type === "text" ? (
                 <span className="band-text-body" style={{ fontStyle: text?.italic ? "italic" : "normal" }}>
@@ -1815,11 +1927,74 @@ export default function Timeline({
             </div>
             <div
               className={`audio-lane ${project.audio.length ? "markable" : ""}`}
-              title={project.audio.length ? "Click the music to mark a beat (M during playback)" : undefined}
+              title={
+                project.audio.length
+                  ? "Click the music to mark a beat (M during playback) · drag a track to move it, its edges to trim"
+                  : undefined
+              }
               onPointerDown={(e) => {
                 if (e.button === 0) addMark(pointerTime(e));
               }}
+              onContextMenu={laneMenu}
             >
+              <div className="audio-clips" role="list" aria-label="Music tracks">
+                {project.audio.map((t, i) => {
+                  const sp = clipSpans[i];
+                  if (!sp || sp.length <= 0) return null;
+                  const name = t.path.replace(/^.*[/\\]/, "");
+                  const pos = sp.start * PX_PER_SEC;
+                  const len = sp.length * PX_PER_SEC;
+                  const fadeIn = Math.min(t.fade_in, sp.length) * PX_PER_SEC;
+                  const fadeOut = Math.min(t.fade_out, sp.length) * PX_PER_SEC;
+                  const on = selectedTrack === i;
+                  return (
+                    <div
+                      key={`clip-${i}`}
+                      role="listitem"
+                      className={`audio-clip ${on ? "selected" : ""}`}
+                      style={vertical ? { top: pos, height: len } : { left: pos, width: len }}
+                      title={`${name} · ${fmtClock(sp.start)}–${fmtClock(sp.start + sp.length)} — drag to move, drag an edge to trim`}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        if (e.button !== 0) return;
+                        selectTrack(i);
+                        setPlaying(false);
+                        const r = e.currentTarget.getBoundingClientRect();
+                        const along = vertical ? e.clientY - r.top : e.clientX - r.left;
+                        const size = vertical ? r.height : r.width;
+                        const edge = along < CLIP_GRIP ? "start" : size - along < CLIP_GRIP ? "end" : "move";
+                        clipDrag.current = {
+                          track: i,
+                          edge,
+                          grabAt: pointerTime(e),
+                          orig: t,
+                          origLength: sp.length,
+                          source: sp.source,
+                          opened: false,
+                        };
+                        try {
+                          e.currentTarget.setPointerCapture(e.pointerId);
+                        } catch {
+                          // Synthetic pointers have no capturable id.
+                        }
+                      }}
+                      onPointerMove={(e) => {
+                        if (clipDrag.current && e.buttons & 1) dragClipTo(pointerTime(e));
+                      }}
+                      onPointerUp={() => {
+                        clipDrag.current = null;
+                      }}
+                      onPointerCancel={() => {
+                        clipDrag.current = null;
+                      }}
+                    >
+                      <span className="clip-fade in" style={vertical ? { height: fadeIn } : { width: fadeIn }} />
+                      <span className="clip-fade out" style={vertical ? { height: fadeOut } : { width: fadeOut }} />
+                      {!vertical && <span className="clip-name">{name}</span>}
+                    </div>
+                  );
+                })}
+              </div>
               <canvas
                 ref={laneRef}
                 role="img"
@@ -1976,7 +2151,7 @@ export default function Timeline({
                   <button
                     title="Add as a music track"
                     aria-label={`Add ${name} as a music track`}
-                    onClick={() => mutate((p) => ({ ...p, audio: [...p.audio, audioTrackFor(m)] }))}
+                    onClick={() => mutate((p) => ({ ...p, audio: appendMusic(p, m, media, total) }))}
                   >
                     + Music
                   </button>

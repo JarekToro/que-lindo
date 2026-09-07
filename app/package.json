@@ -1,5 +1,5 @@
 {
-  "name": "slideshow-studio",
+  "name": "que-lindo",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "dev:mcp": "tauri dev --features mcp",
-    "e2e": "node ../e2e/run.mjs"
+    "e2e": "wdio run e2e/wdio.conf.ts",
+    "e2e:build": "VITE_E2E=1 tauri build --debug --no-bundle -- --features e2e"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -24,6 +25,14 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "@wdio/cli": "^9.31.6",
+    "@wdio/local-runner": "^9.31.6",
+    "@wdio/mocha-framework": "^9.31.6",
+    "@wdio/spec-reporter": "^9.31.2",
+    "@wdio/tauri-plugin": "^1.4.0",
+    "@wdio/tauri-service": "^1.4.0",
+    "expect-webdriverio": "^6.0.10",
+    "tsx": "^4.23.13",
     "typescript": "^5.6",
     "vite": "^6"
   }
