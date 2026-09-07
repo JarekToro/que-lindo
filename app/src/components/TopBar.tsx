@@ -3,6 +3,7 @@ import { clearAutosave, loadProject, saveProject } from "../api";
 import { importFiles, projectMediaPaths } from "../App";
 import { checkRecovery } from "../autosave";
 import { applyMemorialTheme, emptyProject, endCard, titleCard } from "../presets";
+import wordmark from "../assets/wordmark.png";
 import { useEditor } from "../store";
 import Menu from "./Menu";
 import type { FfmpegStatus } from "../types";
@@ -99,7 +100,9 @@ export default function TopBar({
   return (
     <header className="topbar">
       <div className="topbar-group">
-        <h1 className="brand">Que Lindo</h1>
+        <h1 className="brand">
+          <img src={wordmark} alt="Que Lindo" height={22} />
+        </h1>
         <button onClick={doNew}>New</button>
         <button onClick={doOpen}>Open…</button>
         <button onClick={() => doSave(false)}>Save</button>

@@ -1,6 +1,8 @@
-# Que Lindo
+<p align="center">
+  <img src="assets/brand/logo-full.png" alt="Qué lindo" width="420">
+</p>
 
-*pronounced keh LEEN-doh*
+<p align="center"><em>pronounced keh LEEN-doh</em></p>
 
 A small, local slideshow-video maker. Drop in photos, clips and music; get an
 MP4 with collage layouts, gentle Ken Burns motion, titles and transitions.
@@ -242,6 +244,7 @@ examples/               full-feature project + placeholder media generator
 scripts/                ffmpeg sidecar fetchers
 tools/autocrop          print scanning helper
 assets/fonts/           bundled OFL fonts (Crimson Text, Lato)
+assets/brand/           logo (full, mark, wordmark) and the icon source
 docs/                   screenshots and the editor-shell schematic
 ```
 

@@ -61,7 +61,8 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 }
 .topbar-group { display: flex; align-items: center; gap: 8px; }
 .topbar-title { color: var(--muted); }
-.brand { font-size: inherit; font-weight: 700; color: var(--accent); margin: 0 8px 0 0; }
+.brand { display: flex; align-items: center; margin: 0 8px 0 0; }
+.brand img { display: block; height: 22px; width: auto; }
 .warn { color: var(--danger); }
 /* A warning that is also the way to fix it (missing media). */
 .warn-chip { color: var(--danger); border-color: var(--danger); background: transparent; }
