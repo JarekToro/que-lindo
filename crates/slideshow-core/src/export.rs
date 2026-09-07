@@ -104,14 +104,20 @@ pub fn export(
         VideoEncoder::Auto => ffmpeg.has_encoder("h264_videotoolbox"),
     };
     if use_videotoolbox {
-        // VideoToolbox has no CRF; its constant-quality scale runs 1..100,
-        // higher = better. Map the familiar CRF knob onto it (19 → 62).
-        let q = (100i32 - 2 * options.crf as i32).clamp(1, 100);
-        cmd.args([
-            "-c:v", "h264_videotoolbox",
-            "-pix_fmt", "yuv420p",
-            "-q:v", &q.to_string(),
-        ]);
+        cmd.args(["-c:v", "h264_videotoolbox", "-pix_fmt", "yuv420p"]);
+        if ffmpeg.videotoolbox_takes_qscale() {
+            // VideoToolbox has no CRF; its constant-quality scale runs 1..100,
+            // higher = better. Map the familiar CRF knob onto it (19 → 62).
+            let q = (100i32 - 2 * options.crf as i32).clamp(1, 100);
+            cmd.args(["-q:v", &q.to_string()]);
+        } else {
+            // No constant-quality mode in this build. Aim a bitrate at roughly
+            // the same picture instead: H.264 lands near 0.12 bits per pixel at
+            // CRF 18 and loses about 12% per CRF step from there.
+            let bpp = 0.12_f64 * 0.88_f64.powi(options.crf as i32 - 18);
+            let bps = (w as f64 * h as f64 * fps * bpp).clamp(200_000.0, 60_000_000.0);
+            cmd.args(["-b:v", &format!("{}", bps.round() as u64)]);
+        }
     } else {
         cmd.args([
             "-c:v", "libx264",
