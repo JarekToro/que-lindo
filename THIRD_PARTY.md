@@ -1,6 +1,6 @@
 # Third-party notices
 
-Que Lindo's own code is MIT licensed (see `LICENSE`). It ships or relies on
+Qué lindo's own code is MIT licensed (see `LICENSE`). It ships or relies on
 the following work under other terms.
 
 ## Fonts (bundled, `assets/fonts/`)

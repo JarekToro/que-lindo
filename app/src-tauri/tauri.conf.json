@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Que Lindo",
+  "productName": "Qué lindo",
   "version": "0.1.0",
   "identifier": "com.jarektoro.quelindo",
   "build": {
@@ -13,7 +13,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Que Lindo",
+        "title": "Qué lindo",
         "width": 1480,
         "height": 920,
         "minWidth": 1100,
