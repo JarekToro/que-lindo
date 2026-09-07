@@ -29,9 +29,9 @@ Tracking what stands between this repository and a public GitHub repo named
       Commit it as its own change before the rename commit, or stash it.
       Note that the README already lists "Edit in an external app" as a
       feature; drop that bullet if the work is shelved.
-- [ ] Rename the GitHub repo (or create `que-lindo`) and update the local
-      remote. The local folder is still `memorial-slideshow-gen`; rename it
-      when convenient. Nothing in the build depends on the folder name.
+- [x] GitHub repo renamed to `que-lindo`, local remote updated (2026-09-07).
+      The local folder is still `memorial-slideshow-gen`; rename it when
+      convenient. Nothing in the build depends on the folder name.
 - [x] Screenshots re-taken 2026-09-07 with generated gradient media via
       `app/e2e/tools/screenshots.spec.ts` (see its header for the command).
       Swap in shots with real photos whenever you have some you can publish.
@@ -52,9 +52,9 @@ Tracking what stands between this repository and a public GitHub repo named
       Values pane were rewritten against the current inspector (member strip,
       labelled sliders, "▶ Slide" in the scope head). Re-run with
       `cd app && npm run e2e:build && npm run e2e`.
-- [ ] Rename the GitHub repo (or create `que-lindo`) and update the local
-      remote. The local folder is still `memorial-slideshow-gen`; rename it
-      when convenient. Nothing in the build depends on the folder name.
+- [x] GitHub repo renamed to `que-lindo`, local remote updated (2026-09-07).
+      The local folder is still `memorial-slideshow-gen`; rename it when
+      convenient. Nothing in the build depends on the folder name.
 - [x] Screenshots re-taken 2026-09-07 with generated gradient media via
       `app/e2e/tools/screenshots.spec.ts` (see its header for the command).
       Swap in shots with real photos whenever you have some you can publish.
