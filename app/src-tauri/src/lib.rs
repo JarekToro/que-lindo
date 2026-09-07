@@ -929,7 +929,7 @@ pub fn run() {
     {
         builder = builder
             .plugin(tauri_plugin_mcp::init_with_config(
-                tauri_plugin_mcp::PluginConfig::new("Que Lindo".to_string())
+                tauri_plugin_mcp::PluginConfig::new("Qué lindo".to_string())
                     .start_socket_server(true)
                     .socket_path("/tmp/que-lindo-mcp.sock".into()),
             ))

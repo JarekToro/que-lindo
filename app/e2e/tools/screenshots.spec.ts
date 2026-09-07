@@ -47,7 +47,7 @@ describe("README screenshots", () => {
     await clickButton("Presets", ".topbar");
     await clickButton("Add title card (start)");
     await $("textarea[aria-label='Text content']").waitForExist();
-    await setValue({ sel: "textarea[aria-label='Text content']" }, "Que lindo");
+    await setValue({ sel: "textarea[aria-label='Text content']" }, "Qué lindo");
     await act((s) => s.setTime(1.2), undefined, 1500);
     await shot("01-title.png");
 
