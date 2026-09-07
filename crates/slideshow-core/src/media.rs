@@ -85,6 +85,29 @@ impl Ffmpeg {
             .unwrap_or(false)
     }
 
+    /// Whether `h264_videotoolbox` in this build accepts `-q:v`, its constant
+    /// quality knob. Listing the encoder is not enough: VideoToolbox only
+    /// offers constant quality when ffmpeg was built against a new enough SDK
+    /// for an arm64 host, and the x86_64 static build shipped as this app's
+    /// sidecar was not. Asking it to anyway fails the encode outright —
+    /// "qscale not available for encoder" — and leaves a zero-byte file, so
+    /// probe by opening the encoder on a throwaway frame first.
+    pub fn videotoolbox_takes_qscale(&self) -> bool {
+        Command::new(&self.ffmpeg)
+            .args([
+                "-hide_banner", "-v", "error", "-nostdin",
+                "-f", "lavfi", "-i", "color=c=black:s=64x64:d=0.1:r=10",
+                "-c:v", "h264_videotoolbox", "-pix_fmt", "yuv420p", "-q:v", "50",
+                "-f", "null", "-",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
     pub fn probe(&self, path: &Path) -> Result<MediaInfo> {
         let out = Command::new(&self.ffprobe)
             .args(["-v", "error", "-print_format", "json", "-show_streams", "-show_format"])
