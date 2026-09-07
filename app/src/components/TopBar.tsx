@@ -101,7 +101,7 @@ export default function TopBar({
     <header className="topbar">
       <div className="topbar-group">
         <h1 className="brand">
-          <img src={wordmark} alt="Que Lindo" height={22} />
+          <img src={wordmark} alt="Qué lindo" height={22} />
         </h1>
         <button onClick={doNew}>New</button>
         <button onClick={doOpen}>Open…</button>

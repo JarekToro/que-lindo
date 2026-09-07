@@ -1,4 +1,4 @@
-// WebdriverIO configuration for the Que Lindo end-to-end suite.
+// WebdriverIO configuration for the Qué lindo end-to-end suite.
 //
 // Drives the real app — Rust backend, compositor, ffmpeg, WKWebView — through
 // the W3C WebDriver protocol. @wdio/tauri-service launches the binary built by

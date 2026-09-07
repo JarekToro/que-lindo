@@ -1,11 +1,11 @@
 # Going public: checklist
 
 Tracking what stands between this repository and a public GitHub repo named
-**Que Lindo**. Tick items as they land; delete this file when it is empty.
+**Qué lindo**. Tick items as they land; delete this file when it is empty.
 
 ## Done (2026-09-07)
 
-- [x] Rename the product to **Que Lindo** everywhere the name is user- or
+- [x] Rename the product to **Qué lindo** everywhere the name is user- or
       tool-visible: Tauri `productName`, window title, bundle identifier
       (`com.jarektoro.quelindo`), npm package name, HTML title, top bar brand,
       MCP plugin name and socket (`/tmp/que-lindo-mcp.sock`), CI artifact name,

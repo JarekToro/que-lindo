@@ -8,7 +8,7 @@ A small, local slideshow-video maker. Drop in photos, clips and music; get an
 MP4 with collage layouts, gentle Ken Burns motion, titles and transitions.
 No account, no upload, no timeline editor to learn.
 
-*Que lindo* is Spanish for "how lovely". I built this to make the video for
+*Qué lindo* is Spanish for "how lovely". I built this to make the video for
 my Abuela's service, after finding that every option was either a cloud
 service that owned the result or a full video editor that was far more tool
 than the job needed. The project is named for her.
