@@ -10,7 +10,9 @@ export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 export const MEDIA = path.join(ROOT, "examples", "media");
 
 export function ensureFixtures(): void {
-  if (!existsSync(path.join(MEDIA, "img_ONE.png"))) {
+  // music2.mp3 is the last thing the script writes, so it is the one file that
+  // proves a previous run finished rather than died partway through.
+  if (!existsSync(path.join(MEDIA, "music2.mp3"))) {
     execFileSync("bash", [path.join(ROOT, "examples", "make-test-media.sh")], {
       cwd: ROOT,
       stdio: "inherit",
