@@ -18,6 +18,10 @@ tauri-plugin-dialog = "2"
 # Opt-in debugging bridge for AI agents (`mcp` feature). Optional so that it is
 # absent from the dependency graph unless asked for -- see [features] below.
 tauri-plugin-mcp = { git = "https://github.com/P3GLEG/tauri-plugin-mcp", tag = "v0.3.1", optional = true }
+# WebdriverIO end-to-end testing (`e2e` feature): backend access + mocking,
+# and an embedded W3C WebDriver server so macOS needs no external driver.
+tauri-plugin-wdio = { version = "1.4", optional = true }
+tauri-plugin-wdio-webdriver = { version = "1.4", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
@@ -28,9 +32,17 @@ rustface = "0.1.7"
 ort = { version = "2.0.0-rc.13", features = ["download-binaries"] }
 ndarray = "0.17.2"
 
+# LaunchServices lookup for "Edit in <app>" (which apps can edit a photo).
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+
 [features]
 # Lets an MCP client drive and inspect the running app. Development only:
 # it exposes input injection, JS evaluation and screenshots over a local
 # socket, so it must never be enabled for a build you distribute.
 # Run it with `npm run dev:mcp`.
 mcp = ["dep:tauri-plugin-mcp"]
+# Embeds a WebDriver HTTP server (localhost) for the WebdriverIO e2e suite.
+# Same rule as `mcp`: never enable it for a build you distribute.
+# Built with `npm run e2e:build`.
+e2e = ["dep:tauri-plugin-wdio", "dep:tauri-plugin-wdio-webdriver"]

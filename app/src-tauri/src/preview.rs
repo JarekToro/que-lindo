@@ -9,6 +9,7 @@
 
 use slideshow_core::{Ffmpeg, Pixmap, Project, Renderer, Timeline};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
@@ -96,6 +97,12 @@ impl FrameCache {
         })
     }
 
+    /// Media changed on disk: every retained frame may show stale pixels.
+    fn clear(&mut self) {
+        self.map.clear();
+        self.bytes = 0;
+    }
+
     fn put(&mut self, key: Key, value: Arc<Vec<u8>>) {
         self.tick += 1;
         self.bytes += value.len();
@@ -140,6 +147,7 @@ pub fn spawn_render_thread(
     rx: Receiver<Job>,
     current: Arc<Mutex<Option<CurrentDoc>>>,
     ffmpeg: Option<Ffmpeg>,
+    invalidate: Arc<Mutex<Vec<PathBuf>>>,
 ) {
     std::thread::spawn(move || {
         let mut renderer = Renderer::new(ffmpeg.clone());
@@ -150,6 +158,17 @@ pub fn spawn_render_thread(
             let mut jobs = vec![first];
             while let Ok(j) = rx.try_recv() {
                 jobs.push(j);
+            }
+
+            // Files edited externally since the last frame: drop their decoded
+            // pixels and every retained frame (any of them may composite the
+            // stale image).
+            let dirty = std::mem::take(&mut *invalidate.lock().unwrap());
+            if !dirty.is_empty() {
+                for p in &dirty {
+                    renderer.cache.forget(p);
+                }
+                cache.clear();
             }
 
             let newest_min_rev = jobs.last().map(|j| j.min_rev).unwrap_or(0);

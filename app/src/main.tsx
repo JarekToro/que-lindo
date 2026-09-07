@@ -12,6 +12,13 @@ if (import.meta.env.DEV) {
     .catch(() => {});
 }
 
+// Guest bindings for tauri-plugin-wdio (WebdriverIO e2e). `VITE_E2E=1` is set
+// by `npm run e2e:build`, which also turns on the `e2e` cargo feature; in any
+// other build the import is dead code and Vite drops it.
+if (import.meta.env.VITE_E2E) {
+  void import("@wdio/tauri-plugin").catch(() => {});
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />

@@ -7,6 +7,7 @@ import { listFonts } from "../api";
 import { useEditor } from "../store";
 import type { Cell, MediaItem, Slide } from "../types";
 import ProjectValues from "./inspector/ProjectValues";
+import TrackValues from "./inspector/TrackValues";
 import { CellValues, MemberStrip, SlideValues, TextValues } from "./inspector/ValuesPane";
 
 export default function Inspector() {
@@ -15,6 +16,9 @@ export default function Inspector() {
   const selectedCell = useEditor((s) => s.selectedCell);
   const selectedText = useEditor((s) => s.selectedText);
   const selectedIds = useEditor((s) => s.selectedIds);
+  const selectedTrack = useEditor((s) => s.selectedTrack);
+  const selectTrack = useEditor((s) => s.selectTrack);
+  const mutate = useEditor((s) => s.mutate);
   const media = useEditor((s) => s.media);
   const playSlide = useEditor((s) => s.playSlide);
   const [fonts, setFonts] = useState<string[]>([]);
@@ -31,6 +35,37 @@ export default function Inspector() {
   };
 
   const slide: Slide | undefined = project.slides[index];
+
+  // A music track picked in the lane takes the scope over from the slide.
+  const track = selectedTrack !== null ? project.audio[selectedTrack] : undefined;
+  if (track && selectedTrack !== null) {
+    const name = track.path.replace(/^.*[/\\]/, "");
+    return (
+      <aside className="inspector" aria-label="Inspector">
+        <div className="scope">
+          <div className="scope-head">
+            <span>
+              Music · {name}
+              <span className="values-scope"> · track {selectedTrack + 1} of {project.audio.length}</span>
+            </span>
+            <button
+              className="ghost"
+              title="Remove this track from the film"
+              aria-label={`Remove music track ${name}`}
+              onClick={() => {
+                selectTrack(null);
+                mutate((p) => ({ ...p, audio: p.audio.filter((_, i) => i !== selectedTrack) }));
+              }}
+            >
+              Remove
+            </button>
+          </div>
+          <TrackValues index={selectedTrack} />
+        </div>
+        <ProjectValues />
+      </aside>
+    );
+  }
 
   if (!slide) {
     return (

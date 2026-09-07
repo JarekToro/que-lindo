@@ -31,6 +31,12 @@ pub struct AppState {
     /// actually depends on (audio tracks + film length) — photo edits bump
     /// the project rev constantly and must not throw the mix away.
     audio_mix: Mutex<Option<(u64, Arc<Vec<u8>>)>>,
+    /// Paths whose cached pixels are stale (edited externally); the preview
+    /// thread drains this before rendering.
+    preview_invalidate: Arc<Mutex<Vec<PathBuf>>>,
+    /// mtime of each file when it was handed to an external editor (or last
+    /// checked) — what `changed_media` diffs against. None = unreadable then.
+    edit_mtimes: Mutex<HashMap<PathBuf, Option<std::time::SystemTime>>>,
 }
 
 /// Tiny stand-in for a channel crate: std mpsc wrapped for Sync cloning.
@@ -664,6 +670,166 @@ fn reveal_path(path: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// An application the OS lists as able to edit a given file.
+#[derive(Serialize)]
+struct EditorApp {
+    /// Display name (bundle name without ".app").
+    name: String,
+    /// Filesystem path of the application, for `open_in_app`.
+    path: String,
+}
+
+/// Apps registered with the OS as *editors* for this file, default editor
+/// first, the rest alphabetical. Empty on platforms without such a registry
+/// (the frontend then falls back to a single "default app" entry).
+#[tauri::command]
+fn edit_apps(path: String) -> Vec<EditorApp> {
+    #[cfg(target_os = "macos")]
+    return macos_apps::edit_apps(&path);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = path;
+        Vec::new()
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod macos_apps {
+    //! LaunchServices lookup of which applications can edit a file. The C
+    //! API is deprecated in favour of NSWorkspace, but unlike NSWorkspace it
+    //! is documented thread-safe and lets us ask for the *editor* role
+    //! (NSWorkspace only answers "can open").
+
+    use super::EditorApp;
+    use core_foundation::array::{CFArray, CFArrayRef};
+    use core_foundation::base::TCFType;
+    use core_foundation::url::{CFURL, CFURLRef};
+    use std::ffi::c_void;
+    use std::path::Path;
+
+    const K_LS_ROLES_EDITOR: u32 = 0x0000_0004;
+    const K_LS_ROLES_ALL: u32 = 0xFFFF_FFFF;
+
+    #[link(name = "CoreServices", kind = "framework")]
+    extern "C" {
+        fn LSCopyApplicationURLsForURL(in_url: CFURLRef, roles: u32) -> CFArrayRef;
+        fn LSCopyDefaultApplicationURLForURL(
+            in_url: CFURLRef,
+            roles: u32,
+            error: *mut *mut c_void,
+        ) -> CFURLRef;
+    }
+
+    fn apps_for_role(url: &CFURL, roles: u32) -> Vec<std::path::PathBuf> {
+        let arr = unsafe { LSCopyApplicationURLsForURL(url.as_concrete_TypeRef(), roles) };
+        if arr.is_null() {
+            return Vec::new();
+        }
+        let arr: CFArray<CFURL> = unsafe { CFArray::wrap_under_create_rule(arr) };
+        arr.iter().filter_map(|u| u.to_path()).collect()
+    }
+
+    pub fn edit_apps(path: &str) -> Vec<EditorApp> {
+        let Some(url) = CFURL::from_path(Path::new(path), false) else {
+            return Vec::new();
+        };
+        // Editors first; fall back to anything that can open the file at all
+        // (some editors only register the viewer role).
+        let mut paths = apps_for_role(&url, K_LS_ROLES_EDITOR);
+        if paths.is_empty() {
+            paths = apps_for_role(&url, K_LS_ROLES_ALL);
+        }
+        let default = {
+            let mut err: *mut c_void = std::ptr::null_mut();
+            let u = unsafe {
+                LSCopyDefaultApplicationURLForURL(
+                    url.as_concrete_TypeRef(),
+                    K_LS_ROLES_EDITOR,
+                    &mut err,
+                )
+            };
+            if u.is_null() {
+                None
+            } else {
+                unsafe { CFURL::wrap_under_create_rule(u) }.to_path()
+            }
+        };
+
+        let name_of = |p: &Path| {
+            p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+        };
+        paths.sort_by_key(|p| name_of(p).to_lowercase());
+        paths.dedup();
+        if let Some(d) = default {
+            if let Some(at) = paths.iter().position(|p| *p == d) {
+                let d = paths.remove(at);
+                paths.insert(0, d);
+            }
+        }
+        paths
+            .into_iter()
+            .filter(|p| !name_of(p).is_empty())
+            .map(|p| EditorApp { name: name_of(&p), path: p.display().to_string() })
+            .collect()
+    }
+}
+
+/// Open a file in an application to edit it (`app` = path of the app, or
+/// None for the OS default). Records the file's mtime so `changed_media`
+/// can tell whether the editor actually saved anything.
+#[tauri::command]
+fn open_in_app(state: State<AppState>, path: String, app: Option<String>) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    let mtime = std::fs::metadata(&p).ok().and_then(|m| m.modified().ok());
+    state.edit_mtimes.lock().unwrap().insert(p.clone(), mtime);
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = Command::new("open");
+        if let Some(a) = &app {
+            cmd.arg("-a").arg(a);
+        }
+        cmd.arg(&p).spawn().map(|_| ()).map_err(|e| e.to_string())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        Command::new("cmd")
+            .args(["/C", "start", ""])
+            .arg(&p)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = app;
+        Command::new("xdg-open").arg(&p).spawn().map(|_| ()).map_err(|e| e.to_string())
+    }
+}
+
+/// Of the files handed to an external editor, the ones whose bytes changed
+/// since `open_in_app` (or the last check). Changed files are purged from the
+/// preview caches so the next frame decodes fresh pixels; the frontend
+/// refreshes their thumbnails and bumps the revision.
+#[tauri::command]
+fn changed_media(state: State<AppState>, paths: Vec<String>) -> Vec<String> {
+    let mut mtimes = state.edit_mtimes.lock().unwrap();
+    let mut changed = Vec::new();
+    for path in paths {
+        let p = PathBuf::from(&path);
+        let now = std::fs::metadata(&p).ok().and_then(|m| m.modified().ok());
+        // A path never launched from here counts as changed once: better one
+        // spurious refresh than a stale frame.
+        let dirty = mtimes.get(&p).map(|known| *known != now).unwrap_or(true);
+        if dirty {
+            mtimes.insert(p.clone(), now);
+            state.preview_invalidate.lock().unwrap().push(p);
+            changed.push(path);
+        }
+    }
+    changed
+}
+
 /// How deep `search_media_folder` descends below the folder it was given.
 const SEARCH_MAX_DEPTH: usize = 6;
 
@@ -738,7 +904,8 @@ pub fn run() {
 
     let current: Arc<Mutex<Option<preview::CurrentDoc>>> = Arc::new(Mutex::new(None));
     let (tx, rx) = crossbeam_channel_like::channel::<preview::Job>();
-    preview::spawn_render_thread(rx, current.clone(), ffmpeg.clone());
+    let preview_invalidate: Arc<Mutex<Vec<PathBuf>>> = Arc::new(Mutex::new(Vec::new()));
+    preview::spawn_render_thread(rx, current.clone(), ffmpeg.clone(), preview_invalidate.clone());
 
     let state = AppState {
         ffmpeg,
@@ -748,9 +915,11 @@ pub fn run() {
         export_cancel: Mutex::new(None),
         fonts: Mutex::new(None),
         audio_mix: Mutex::new(None),
+        preview_invalidate,
+        edit_mtimes: Mutex::new(HashMap::new()),
     };
 
-    // `mut` is only taken by the optional MCP plugin registration below.
+    // `mut` is only taken by the optional MCP / e2e plugin registrations below.
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
 
@@ -760,9 +929,9 @@ pub fn run() {
     {
         builder = builder
             .plugin(tauri_plugin_mcp::init_with_config(
-                tauri_plugin_mcp::PluginConfig::new("Slideshow Studio".to_string())
+                tauri_plugin_mcp::PluginConfig::new("Que Lindo".to_string())
                     .start_socket_server(true)
-                    .socket_path("/tmp/slideshow-studio-mcp.sock".into()),
+                    .socket_path("/tmp/que-lindo-mcp.sock".into()),
             ))
             // The capability is granted here rather than from `capabilities/`,
             // which tauri-build scans unconditionally -- `mcp:default` does not
@@ -770,6 +939,21 @@ pub fn run() {
             .setup(|app| {
                 use tauri::Manager;
                 app.add_capability(include_str!("../mcp-capability.json"))?;
+                Ok(())
+            });
+    }
+
+    // WebdriverIO e2e bridge (`e2e` cargo feature, `npm run e2e:build`).
+    // `wdio` answers execute/mock/log calls; `wdio-webdriver` is the embedded
+    // WebDriver server the test runner connects to on TAURI_WEBDRIVER_PORT.
+    #[cfg(feature = "e2e")]
+    {
+        builder = builder
+            .plugin(tauri_plugin_wdio::init())
+            .plugin(tauri_plugin_wdio_webdriver::init())
+            .setup(|app| {
+                use tauri::Manager;
+                app.add_capability(include_str!("../wdio-capability.json"))?;
                 Ok(())
             });
     }
@@ -800,6 +984,9 @@ pub fn run() {
             export_video,
             cancel_export,
             reveal_path,
+            edit_apps,
+            open_in_app,
+            changed_media,
             missing_paths,
             search_media_folder,
         ])

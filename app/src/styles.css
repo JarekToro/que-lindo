@@ -356,11 +356,17 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
 .time-strip.vertical .slide-card.insert-before { box-shadow: 0 -4px 0 -1px var(--accent); }
 .time-strip.vertical .slide-card.insert-after { box-shadow: 0 4px 0 -1px var(--accent); }
 .time-strip.vertical .audio-lane {
-  width: 34px; height: auto; margin: 0 0 0 6px; flex-shrink: 0; animation: none;
+  width: 48px; height: auto; padding: 0 0 0 14px; margin: 0 0 0 6px; flex-shrink: 0; animation: none;
 }
+.time-strip.vertical .audio-lane canvas { width: 34px; }
+.time-strip.vertical .audio-clips { top: 0; bottom: 0; right: auto; width: 14px; height: auto; }
+.time-strip.vertical .audio-clip { left: 1px; right: 1px; top: auto; height: auto; }
+.time-strip.vertical .audio-clip.trimmable { cursor: ns-resize; }
+.time-strip.vertical .clip-fade.in { top: 0; left: 0; right: 0; width: auto; }
+.time-strip.vertical .clip-fade.out { bottom: 0; left: 0; right: 0; width: auto; }
 .time-strip.vertical .seam-marker { left: 30px; top: auto; transform: translate(0, -50%); margin-top: 0; }
 .time-strip.vertical .mark-tick {
-  left: 34px; right: 40px; top: auto; width: auto; height: 1px; margin-left: 0; margin-top: -0.5px;
+  left: 34px; right: 54px; top: auto; width: auto; height: 1px; margin-left: 0; margin-top: -0.5px;
 }
 .time-strip.vertical .mark-pin {
   left: auto; right: 0; top: auto; width: 34px; height: 18px; margin-left: 0; margin-top: -9px;
@@ -388,9 +394,29 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   pointer-events: none; height: 14px;
 }
 .audio-lane {
-  position: relative; height: 34px; margin-top: 6px; border-radius: 6px;
-  background: var(--panel-2); border: 1px solid var(--line); overflow: hidden;
+  position: relative; height: 48px; padding-top: 14px; box-sizing: border-box; margin-top: 6px;
+  border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden;
   animation: lane-rise 320ms cubic-bezier(0.2, 0, 0, 1);
+}
+/* Music clips: one bar per track along the top of the lane, above the mix's
+   waveform. The bar is the track's footprint on the film; the bright wedges
+   at its ends are the fades, so a cross-fade shows as two wedges overlapping. */
+.audio-clips { position: absolute; top: 0; left: 0; right: 0; height: 14px; z-index: 2; }
+.audio-clip {
+  position: absolute; top: 1px; height: 12px; box-sizing: border-box; border-radius: 3px;
+  background: rgba(212, 175, 110, 0.28); border: 1px solid rgba(212, 175, 110, 0.6);
+  cursor: grab; touch-action: none; overflow: hidden; user-select: none;
+}
+.audio-clip:hover { background: rgba(212, 175, 110, 0.4); }
+.audio-clip.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.audio-clip:active { cursor: grabbing; }
+.clip-fade { position: absolute; top: 0; bottom: 0; pointer-events: none; }
+.clip-fade.in { left: 0; background: linear-gradient(to top right, transparent 50%, rgba(212, 175, 110, 0.55) 50%); }
+.clip-fade.out { right: 0; background: linear-gradient(to top left, transparent 50%, rgba(212, 175, 110, 0.55) 50%); }
+.clip-name {
+  position: absolute; left: 6px; top: 0; line-height: 10px; font-size: 9px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: calc(100% - 12px);
+  pointer-events: none;
 }
 @keyframes lane-rise {
   from { transform: translateY(14px); opacity: 0; }
@@ -405,12 +431,12 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
    are the ruler (20 + 6), the card row (76 + 3 padding + 1 border, doubled)
    and the lane's 6px gap. */
 .mark-tick {
-  position: absolute; top: 26px; height: 90px; width: 1px; margin-left: -0.5px;
+  position: absolute; top: 26px; height: 104px; width: 1px; margin-left: -0.5px;
   background: var(--accent); opacity: 0.45; pointer-events: none; z-index: 2;
 }
 .mark-tick.selected { opacity: 0.9; }
 .mark-pin {
-  position: absolute; top: 116px; height: 34px; width: 18px; margin-left: -9px;
+  position: absolute; top: 130px; height: 34px; width: 18px; margin-left: -9px;
   padding: 0; z-index: 5; cursor: grab; touch-action: none;
   display: flex; align-items: center; justify-content: center;
   background: transparent; border: none; color: var(--accent);

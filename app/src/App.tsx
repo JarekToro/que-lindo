@@ -15,6 +15,7 @@ import {
 } from "./api";
 import { PILE_SIZE, needsRebuildConfirm } from "./autobuild";
 import { checkRecovery, useAutosave, useRecovery } from "./autosave";
+import { refreshEditedMedia } from "./editExternal";
 import ExportDialog from "./components/ExportDialog";
 import Inspector from "./components/Inspector";
 import Preview from "./components/Preview";
@@ -24,7 +25,6 @@ import Splitter from "./components/Splitter";
 import Timeline from "./components/Timeline";
 import TopBar from "./components/TopBar";
 import { tracksWithMark } from "./marks";
-import { slideForMedia } from "./presets";
 import { useEditor } from "./store";
 import type { FfmpegStatus, ImportedMedia, Project } from "./types";
 
@@ -47,8 +47,7 @@ const PROBE_CONCURRENCY = 4;
 
 declare global {
   interface Window {
-    /** Test/automation handle — same instance the app uses (HMR-safe). */
-    __importFiles?: typeof importFiles;
+    /** Test/automation handles — same instances the app uses (HMR-safe). */
   }
 }
 
@@ -116,23 +115,17 @@ export async function importFiles(paths: string[]): Promise<ImportedMedia[]> {
 }
 
 /**
- * Import straight into Arrange: every photo and clip becomes a slide, in the
- * order dropped, as one undo step. Audio (and anything that fails) stays on
- * the "Not used" shelf for an explicit decision.
+ * Import lands on the "Not used" shelf: nothing becomes a slide until it is
+ * dragged into Arrange or the whole bin is built. A pile of photos into an
+ * otherwise blank project still gets the one-click "Build slideshow" nudge.
  */
-export async function importIntoTimeline(paths: string[]): Promise<void> {
+export async function importToShelf(paths: string[]): Promise<void> {
   // Whether there was anything to lose *before* the import decides whether
   // Arrange offers to build the whole thing afterwards.
   const wasBlank = !needsRebuildConfirm(useEditor.getState().project.slides);
   const items = await importFiles(paths);
-  const visual = items.filter((m) => m.info.is_image || m.info.has_video);
-  if (!visual.length) return;
-  useEditor.getState().mutate((p) => ({
-    ...p,
-    slides: [...p.slides, ...visual.map(slideForMedia)],
-  }));
   // A whole pile into an empty project is exactly the case one click handles.
-  if (wasBlank && visual.filter((m) => m.info.is_image).length >= PILE_SIZE) {
+  if (wasBlank && items.filter((m) => m.info.is_image).length >= PILE_SIZE) {
     useEditor.getState().setSuggestBuild(true);
   }
 }
@@ -158,6 +151,14 @@ export default function App() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  // Coming back from an external editor ("Edit in …"): re-read whatever
+  // photos changed on disk.
+  useEffect(() => {
+    const onFocus = () => void refreshEditedMedia();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
   useEffect(() => {
     checkFfmpeg().then(setFfmpeg).catch(console.error);
     // A project file passed on the command line opens on launch.
@@ -176,10 +177,10 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // OS file drops go straight into Arrange: photos and clips become slides.
+  // OS file drops land on the "Not used" shelf like any other import.
   useEffect(() => {
     const un = onFileDrop((paths) => {
-      void importIntoTimeline(paths);
+      void importToShelf(paths);
     });
     return () => {
       un.then((f) => f());
@@ -276,7 +277,7 @@ export default function App() {
       ],
     });
     if (!picked) return;
-    void importIntoTimeline(Array.isArray(picked) ? picked : [picked]);
+    void importToShelf(Array.isArray(picked) ? picked : [picked]);
   };
 
   useAutosave(exporting);
@@ -416,4 +417,3 @@ export default function App() {
   );
 }
 
-window.__importFiles = importFiles;

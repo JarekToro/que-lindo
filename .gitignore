@@ -23,3 +23,15 @@ app/src-tauri/binaries/ffprobe*
 
 
 
+
+# Tauri regenerates these on every build
+/app/src-tauri/gen/schemas
+
+# OS / language cruft
+.DS_Store
+__pycache__/
+*.pyc
+
+# WebdriverIO run output
+/app/e2e/logs
+/app/logs

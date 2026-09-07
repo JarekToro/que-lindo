@@ -496,4 +496,12 @@ impl MediaCache {
     pub fn reset_decoders(&mut self) {
         self.videos.clear();
     }
+
+    /// Forget everything cached for one file — it changed on disk (e.g. was
+    /// edited in an external app) and must be re-read.
+    pub fn forget(&mut self, path: &Path) {
+        self.images.remove(path);
+        self.videos.remove(path);
+        self.probes.remove(path);
+    }
 }

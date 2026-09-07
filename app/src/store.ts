@@ -80,6 +80,8 @@ export interface EditorState {
   selectedIds: string[];
   selectedCell: number | null;
   selectedText: number | null;
+  /** Music track shown in the inspector (index into project.audio), or null. */
+  selectedTrack: number | null;
 
   media: MediaItem[];
   time: number;
@@ -111,6 +113,7 @@ export interface EditorState {
   setSelection(ids: string[], anchor: number): void;
   selectCell(index: number | null): void;
   selectText(index: number | null): void;
+  selectTrack(index: number | null): void;
   beginImport(paths: string[]): void;
   finishImport(
     path: string,
@@ -137,6 +140,9 @@ export interface EditorState {
   markSaved(): void;
   /** A restored crash snapshot is unsaved work, however it entered the store. */
   markDirty(): void;
+  /** Same document, new revision: the backend renders every frame afresh —
+   * for media whose bytes changed on disk (edited in an external app). */
+  refreshPreview(): void;
   undo(): void;
   redo(): void;
 }
@@ -168,6 +174,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   selectedIds: [],
   selectedCell: null,
   selectedText: null,
+  selectedTrack: null,
   media: [],
   time: 0,
   playing: false,
@@ -189,6 +196,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       selectedSlide: 0,
       selectedCell: null,
       selectedText: null,
+      selectedTrack: null,
       time: 0,
       playing: false,
       // A different project: whatever the last import suggested is stale.
@@ -242,6 +250,7 @@ export const useEditor = create<EditorState>((set, get) => ({
       selectedIds: id ? [id] : [],
       selectedCell: null,
       selectedText: null,
+      selectedTrack: null,
     });
     if (seek && timing && timing.spans[clamped]) {
       // Land just past the transition-in so the selected slide itself shows.
@@ -256,15 +265,25 @@ export const useEditor = create<EditorState>((set, get) => ({
   setSelection(ids, anchor) {
     const { project } = get();
     const clamped = Math.max(0, Math.min(anchor, project.slides.length - 1));
-    set({ selectedSlide: clamped, selectedIds: ids, selectedCell: null, selectedText: null });
+    set({
+      selectedSlide: clamped,
+      selectedIds: ids,
+      selectedCell: null,
+      selectedText: null,
+      selectedTrack: null,
+    });
   },
 
   selectCell(index) {
-    set({ selectedCell: index, selectedText: null });
+    set({ selectedCell: index, selectedText: null, selectedTrack: null });
   },
 
   selectText(index) {
-    set({ selectedText: index, selectedCell: null });
+    set({ selectedText: index, selectedCell: null, selectedTrack: null });
+  },
+
+  selectTrack(index) {
+    set({ selectedTrack: index, selectedCell: null, selectedText: null });
   },
 
   beginImport(paths) {
@@ -384,6 +403,11 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   markDirty() {
     set({ dirty: true });
+  },
+
+  refreshPreview() {
+    set({ rev: get().rev + 1 });
+    scheduleSync(get, set);
   },
 
   undo() {

@@ -1,12 +1,14 @@
 // Factories and memorial-oriented presets. These stamp out plain model
 // objects — nothing here is special-cased in the renderer.
 
+import { trackLength } from "./marks";
 import type {
   AudioTrack,
   Cell,
   ImportedMedia,
   Layout,
   MediaInfo,
+  MediaItem,
   Motion,
   Project,
   Slide,
@@ -216,6 +218,48 @@ export function audioTrackFor(media: ImportedMedia): AudioTrack {
     loop: true,
     markers: [],
   };
+}
+
+/** How far a new song overlaps the one before it, and how long both fade. */
+export const MUSIC_CROSSFADE = 3;
+
+/** Where a track ends on the timeline if it plays its file once through,
+ * capped at the film's end — ignoring `loop`, which only says what happens
+ * *after*. Null until the file has been probed (a looping track has no other
+ * way of knowing its length). */
+export function trackNaturalEnd(track: AudioTrack, total: number, media: MediaItem[]): number | null {
+  const item = media.find((m) => m.path === track.path);
+  const source = item?.status === "ready" && item.info.duration > 0 ? item.info.duration : undefined;
+  if (source === undefined && track.duration === null) return null;
+  return track.start + trackLength({ ...track, loop: false }, total, source);
+}
+
+/** A new song joins the music after the latest one ends, overlapping it by
+ * `MUSIC_CROSSFADE` with matching fades so the two cross. Only the last song
+ * loops to fill the film, so the one it follows stops looping; the user can
+ * change any of this in the inspector afterwards. */
+export function appendMusic(
+  project: Project,
+  song: ImportedMedia,
+  media: MediaItem[],
+  total: number,
+): AudioTrack[] {
+  const fresh = audioTrackFor(song);
+  if (!project.audio.length) return [fresh];
+  const ends = project.audio.map((t) => trackNaturalEnd(t, total, media));
+  let last = -1;
+  let lastEnd = 0;
+  ends.forEach((e, i) => {
+    if (e !== null && e >= lastEnd) {
+      last = i;
+      lastEnd = e;
+    }
+  });
+  const start = Math.max(0, lastEnd - MUSIC_CROSSFADE);
+  const audio = project.audio.map((t, i) =>
+    i === last ? { ...t, loop: false, fade_out: Math.max(t.fade_out, MUSIC_CROSSFADE) } : t,
+  );
+  return [...audio, { ...fresh, start, fade_in: MUSIC_CROSSFADE }];
 }
 
 // ---- memorial presets ----
