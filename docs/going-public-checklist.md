@@ -33,9 +33,9 @@ Tracking what stands between this repository and a public GitHub repo named
 - [ ] Rename the GitHub repo (or create `que-lindo`) and update the local
       remote. The local folder is still `memorial-slideshow-gen`; rename it
       when convenient. Nothing in the build depends on the folder name.
-- [ ] Re-take the six screenshots in `docs/screenshots/`. They show the old
-      name and the old three-pane layout, so the README no longer embeds them.
-      Add them back to the README once refreshed.
+- [x] Screenshots re-taken 2026-09-07 with generated gradient media via
+      `app/e2e/tools/screenshots.spec.ts` (see its header for the command).
+      Swap in shots with real photos whenever you have some you can publish.
 - [ ] Make a real app icon. `app/src-tauri/icons/` is still the Tauri
       placeholder.
 - [ ] Read the dedication paragraph at the top of `README.md` and make it
@@ -61,9 +61,9 @@ Tracking what stands between this repository and a public GitHub repo named
 - [ ] Rename the GitHub repo (or create `que-lindo`) and update the local
       remote. The local folder is still `memorial-slideshow-gen`; rename it
       when convenient. Nothing in the build depends on the folder name.
-- [ ] Re-take the six screenshots in `docs/screenshots/`. They show the old
-      name and the old three-pane layout, so the README no longer embeds them.
-      Add them back to the README once refreshed.
+- [x] Screenshots re-taken 2026-09-07 with generated gradient media via
+      `app/e2e/tools/screenshots.spec.ts` (see its header for the command).
+      Swap in shots with real photos whenever you have some you can publish.
 - [ ] Make a real app icon. `app/src-tauri/icons/` is still the Tauri
       placeholder.
 - [ ] Read the dedication paragraph at the top of `README.md` and make it
