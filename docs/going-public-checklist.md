@@ -20,7 +20,6 @@ Tracking what stands between this repository and a public GitHub repo named
 - [x] Remove `plans/x.md` (an Aug 31 plan whose phases 0 to 5 have shipped;
       the leftovers are listed under "Later" below).
 - [x] Add `tools/autocrop` (print scanning helpers) to the repo.
-- [x] Fix stale claims in `PRODUCT.md` (name, preview audio now implemented).
 
 ## Before the first push
 
@@ -114,13 +113,11 @@ Observed while surveying; none are blockers.
 
 - [ ] `app/src/presets.ts` still calls its presets "memorial-oriented" in the
       header comment and the Presets menu offers "Apply memorial pacing" only.
-      `PRODUCT.md` asks for occasion-neutral defaults with memorial as one
-      preset. Either add other occasion presets or reword the doc.
-- [ ] The UI has no ARIA roles or labels beyond a few `aria-label`s (noted
-      in `PRODUCT.md`). Phase 6 of the old plan.
-- [ ] `PRODUCT.md` and `DESIGN.md` read like specs written for an agent.
-      Fine for contributors, but consider trimming or moving them under
-      `docs/`.
+      Decide whether defaults stay memorial-flavoured or other occasion
+      presets join it.
+- [ ] The UI has no ARIA roles or labels beyond a few `aria-label`s.
+      Phase 6 of the old plan.
+
 - [ ] Windows: "Edit in external app" returns no editors outside macOS;
       confirm the fallback ("open with default app") works there.
 - [ ] `ort` uses `download-binaries`, which fetches ONNX Runtime at build

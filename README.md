@@ -257,9 +257,6 @@ documents, against a debug build that embeds a WebDriver server. `dev:mcp`
 enables the `mcp` Cargo feature, an agent debugging bridge over a local
 socket. Both are development-only and never part of a distributed build.
 
-[DESIGN.md](DESIGN.md) documents the UI design system and
-[PRODUCT.md](PRODUCT.md) the product intent and constraints.
-
 ## License
 
 MIT. See [LICENSE](LICENSE). Bundled fonts, models and ffmpeg builds carry
