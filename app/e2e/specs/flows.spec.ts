@@ -41,6 +41,10 @@ describe("User flows", () => {
     await act((s) => s.selectSlide(1, false));
     await clickButton("▶ Slide", ".scope-head");
     await waitForStore((s) => s.playing === true, undefined, 5000);
+    // The clock is the audio context, which only starts once the mix has been
+    // rendered and decoded; on a slow machine that start-up outlasts the slide
+    // itself, so give the audition its own budget before timing the stop.
+    await waitForStore((s) => s.playing === false || s.time > s.timing!.spans[1].start + 0.2, undefined, 30_000, "audition never started playing");
     await waitForStore((s) => s.playing === false, undefined, 15_000); // stops on its own at the slide end
     const stoppedAt = await store((s) => s.time);
     const spanEnd = await store((s) => s.timing!.spans[1].end);

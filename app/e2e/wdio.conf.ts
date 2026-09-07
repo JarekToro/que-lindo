@@ -16,6 +16,7 @@ import { ensureFixtures } from "./page/fixtures.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const BINARY = path.join(ROOT, "target", "debug", "slideshow-app");
+const LOGS = path.join(ROOT, "app", "e2e", "logs");
 
 export const config: WebdriverIO.Config = {
   runner: "local",
@@ -38,10 +39,14 @@ export const config: WebdriverIO.Config = {
         commandTimeout: 60_000,
         captureBackendLogs: true,
         captureFrontendLogs: true,
-        logDir: path.join(ROOT, "app", "e2e", "logs"),
+        logDir: LOGS,
       },
     ],
   ],
+  // The service's own `logDir` only applies to its standalone entry point;
+  // under the testrunner it writes captured backend/frontend logs to WDIO's
+  // `outputDir`, which defaults to app/logs — where CI wasn't looking.
+  outputDir: LOGS,
   framework: "mocha",
   mochaOpts: { ui: "bdd", timeout: 90_000 },
   reporters: ["spec"],
