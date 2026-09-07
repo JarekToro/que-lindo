@@ -132,7 +132,10 @@ describe("Time mode", () => {
       s.setTime(0);
       s.setPlaying(true);
     });
-    await browser.pause(1500);
+    // Playback's clock is the audio context, and it only starts once the mix
+    // has been rendered and decoded — which on a slow machine outlasts any
+    // fixed pause. Wait for time to actually move rather than assuming it has.
+    await waitForStore((s) => s.time > 0.5, undefined, 30_000, "playback never started moving time");
     await act((s) => s.setPlaying(false));
     const left = await dom(() => parseFloat(document.querySelector<HTMLElement>(".playhead")?.style.left ?? "0"));
     expect(left).toBeGreaterThan(10);

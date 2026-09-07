@@ -89,21 +89,27 @@ describe("Persistence, undo, export", () => {
       undefined,
       500,
     );
-    const done = await browser.execute(async (out: string) => {
-      const inv = window.__TAURI_INTERNALS__.invoke;
+    await browser.execute(async (out: string) => {
       const project = window.__editorStore.getState().project;
-      await inv("export_video", { project, outPath: out, scale: 0.25, crf: 30 });
-      // Completion shows up as a probe-able MP4 (ffprobe fails until the file
-      // is finalized, so polling it doubles as the done signal).
-      for (let i = 0; i < 120; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        const probe = (await inv("probe_media", { path: out }).catch(() => null)) as { info: { has_video: boolean; duration: number } } | null;
-        if (probe && probe.info.has_video && probe.info.duration > 0.5) return probe.info;
-      }
-      return null;
+      await window.__TAURI_INTERNALS__.invoke("export_video", { project, outPath: out, scale: 0.25, crf: 30 });
     }, OUT);
-    expect(done).toBeTruthy();
-    expect(done!.duration).toBeGreaterThan(1.5);
-    expect(done!.has_video).toBe(true);
+    // export_video returns as soon as the encode thread is spawned, so the
+    // wait belongs here rather than inside one long-running execute: a failed
+    // export would otherwise sit there until mocha killed the test with a bare
+    // "Timeout" that says nothing about why. Completion shows up as a
+    // probe-able MP4 — ffprobe fails until the file is finalized.
+    let info: { has_video: boolean; duration: number } | null = null;
+    await browser.waitUntil(
+      async () => {
+        info = await browser.execute(async (out: string) => {
+          const r = (await window.__TAURI_INTERNALS__.invoke("probe_media", { path: out }).catch(() => null)) as { info: { has_video: boolean; duration: number } } | null;
+          return r?.info ?? null;
+        }, OUT);
+        return !!info && info.has_video && info.duration > 0.5;
+      },
+      { timeout: 60_000, interval: 500, timeoutMsg: `export never produced a playable MP4 at ${OUT}` },
+    );
+    expect(info!.duration).toBeGreaterThan(1.5);
+    expect(info!.has_video).toBe(true);
   });
 });
