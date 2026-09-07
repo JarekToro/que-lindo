@@ -1,7 +1,11 @@
 name: build
 
 on:
+  # Pushes build on main only. Every other branch is covered by its pull
+  # request, and an unfiltered push trigger would otherwise run the whole
+  # matrix twice for each one.
   push:
+    branches: [main]
   pull_request:
 
 jobs:
