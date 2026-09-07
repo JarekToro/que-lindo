@@ -3,20 +3,23 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Prefer a system ffmpeg, then fall back to the sidecar scripts/fetch-ffmpeg.sh
-# downloads. The macOS e2e runner has no ffmpeg on PATH but does fetch the
-# sidecar, so either one is enough to generate fixtures.
-FFMPEG=ffmpeg
-if ! command -v ffmpeg >/dev/null 2>&1; then
-  case "$(uname -s)/$(uname -m)" in
-    Darwin/arm64) TRIPLE=aarch64-apple-darwin ;;
-    Darwin/*)     TRIPLE=x86_64-apple-darwin ;;
-    *)            TRIPLE=x86_64-unknown-linux-gnu ;;
-  esac
-  FFMPEG="../app/src-tauri/binaries/ffmpeg-$TRIPLE"
-  if [ ! -x "$FFMPEG" ]; then
-    echo "error: no ffmpeg on PATH and no sidecar at examples/$FFMPEG" >&2
-    echo "  install ffmpeg, or run scripts/fetch-ffmpeg.sh $TRIPLE" >&2
+# Prefer the sidecar scripts/fetch-ffmpeg.sh downloads, then fall back to a
+# system ffmpeg. The sidecar is the build the app itself resolves at runtime
+# (Ffmpeg::locate looks beside the executable before PATH), so the fixtures get
+# made by the same ffmpeg the specs go on to exercise. It is also the one whose
+# filters we know: a distro or Homebrew ffmpeg may be built without drawtext.
+case "$(uname -s)/$(uname -m)" in
+  Darwin/arm64) TRIPLE=aarch64-apple-darwin ;;
+  Darwin/*)     TRIPLE=x86_64-apple-darwin ;;
+  *)            TRIPLE=x86_64-unknown-linux-gnu ;;
+esac
+FFMPEG="../app/src-tauri/binaries/ffmpeg-$TRIPLE"
+if [ ! -x "$FFMPEG" ]; then
+  if command -v ffmpeg >/dev/null 2>&1; then
+    FFMPEG=ffmpeg
+  else
+    echo "error: no sidecar at examples/$FFMPEG and no ffmpeg on PATH" >&2
+    echo "  run scripts/fetch-ffmpeg.sh $TRIPLE, or install ffmpeg" >&2
     exit 1
   fi
 fi
@@ -26,12 +29,30 @@ mkdir -p media out
 # Frames need visible detail: several specs assert that a zoom or crop change
 # alters the rendered frame, and a flat colour field is identical under any
 # such transform. drawtext supplies that detail but needs libfreetype and a
-# font, so probe it by actually running it — `-filters | grep -q` trips SIGPIPE
-# under `set -o pipefail`, and would miss a fontless build either way. The
-# fallback draws boxes instead, which every build can do.
-if "$FFMPEG" -v error -f lavfi -i "color=c=black:s=64x64" -frames:v 1 \
-     -vf "drawtext=text=probe:fontsize=12:fontcolor=white" -f null - >/dev/null 2>&1; then
-  VF="drawtext=text='LABEL':fontsize=120:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2"
+# font it can actually load, so probe it by actually running it — `-filters |
+# grep -q` trips SIGPIPE under `set -o pipefail`, and would miss a fontless
+# build either way. Naming a font file comes first: static builds carry no
+# fontconfig configuration, so asking for a font by name fails on them even
+# though the filter is there. The fallback draws boxes, which every build can do.
+FONT=""
+FOUND=""
+for candidate in \
+  /System/Library/Fonts/Supplemental/Arial.ttf \
+  /System/Library/Fonts/Helvetica.ttc \
+  /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf \
+  ""; do
+  [ -z "$candidate" ] || [ -f "$candidate" ] || continue
+  prefix=""
+  [ -z "$candidate" ] || prefix="fontfile=$candidate:"
+  if "$FFMPEG" -v error -f lavfi -i "color=c=black:s=64x64" -frames:v 1 \
+       -vf "drawtext=${prefix}text=probe:fontsize=12:fontcolor=white" -f null - >/dev/null 2>&1; then
+    FONT="$prefix"
+    FOUND=yes
+    break
+  fi
+done
+if [ -n "$FOUND" ]; then
+  VF="drawtext=${FONT}text='LABEL':fontsize=120:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2"
 else
   echo "note: no usable drawtext filter — labelling frames with boxes instead" >&2
   VF="drawbox=x=iw*0.12:y=ih*0.12:w=iw*0.32:h=ih*0.26:color=white@0.95:t=fill,drawbox=x=iw*0.54:y=ih*0.56:w=iw*0.30:h=ih*0.28:color=black@0.75:t=fill"
