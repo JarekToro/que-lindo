@@ -8,21 +8,8 @@ app/src-tauri/binaries/ffprobe*
 /examples/out
 *.mp4
 
-# Claude Code
-
-
-
+# Claude Code, machine-local
 .claude/settings.local.json
-
-
-
-
-
-
-
-
-
-
 
 # Tauri regenerates these on every build
 /app/src-tauri/gen/schemas
