@@ -30,11 +30,19 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 fetch_macos() {
-  # evermeet.cx serves per-tool zips of static universal-ish builds (x86_64;
-  # they run on Apple Silicon via Rosetta, or natively when marked arm64).
+  # Martin Riedl's build server serves per-tool zips of static builds for both
+  # macOS architectures. The arch matters beyond speed: VideoToolbox only
+  # offers constant-quality H.264 on Apple Silicon, so an x86_64 ffmpeg under
+  # Rosetta fails every export outright with "qscale not available for
+  # encoder". evermeet.cx, which this used to fetch, is Intel-only by policy.
+  local arch
+  case "$TRIPLE" in
+    aarch64-*) arch=arm64 ;;
+    *) arch=amd64 ;;
+  esac
   for tool in ffmpeg ffprobe; do
-    echo "  downloading $tool ..."
-    curl -fL --retry 3 "https://evermeet.cx/ffmpeg/getrelease/$tool/zip" -o "$TMP/$tool.zip"
+    echo "  downloading $tool (macos/$arch) ..."
+    curl -fL --retry 3 "https://ffmpeg.martin-riedl.de/redirect/latest/macos/$arch/release/$tool.zip" -o "$TMP/$tool.zip"
     unzip -oq "$TMP/$tool.zip" -d "$TMP"
     install -m 755 "$TMP/$tool" "$DEST/$tool-$TRIPLE"
   done
@@ -63,6 +71,22 @@ for tool in ffmpeg ffprobe; do
     exit 1
   fi
 done
+
+# And that they are the architecture the triple claims. A binary of the wrong
+# arch still runs under Rosetta, so the mismatch shows up not as a crash but as
+# missing hardware encoders — worth failing here rather than at export time.
+case "$TRIPLE" in
+  *apple-darwin)
+    want=$([ "${TRIPLE%%-*}" = "aarch64" ] && echo arm64 || echo x86_64)
+    for tool in ffmpeg ffprobe; do
+      got=$(file -b "$DEST/$tool-$TRIPLE")
+      case "$got" in
+        *"$want"*) ;;
+        *) echo "error: $tool-$TRIPLE is not $want: $got" >&2; exit 1 ;;
+      esac
+    done
+    ;;
+esac
 
 echo "done:"
 ls -la "$DEST"
