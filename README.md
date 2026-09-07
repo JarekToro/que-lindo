@@ -13,6 +13,14 @@ job needed. This project is named for her.
 > **Status:** 0.1.0. Developed and used on macOS. Windows builds in CI but has
 > had far less use. There are no releases yet; build from source (below).
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Title card, text controls, split Arrange and Time view](docs/screenshots/01-title.png) | ![A four-photo moment opened as a band, layout picker](docs/screenshots/02-group.png) |
+| ![One photo: motion, fit and framing controls, zoom aim handle](docs/screenshots/03-photo.png) | ![Time view with the music waveform and beat marks](docs/screenshots/04-time.png) |
+| ![Export dialog with size presets](docs/screenshots/05-export.png) | |
+
 ## What it does
 
 ### From a pile of photos to a draft in one click
@@ -227,6 +235,7 @@ crates/slideshow-cli    headless CLI (bin: slideshow)
 app/                    Tauri v2 app (React + TypeScript), face detection,
                         embeddings, preview server
 app/e2e/                WebdriverIO end-to-end suites against the real app
+                        (tools/screenshots.spec.ts regenerates the README shots)
 examples/               full-feature project + placeholder media generator
 scripts/                ffmpeg sidecar fetchers
 tools/autocrop          print scanning helper
