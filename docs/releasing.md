@@ -54,11 +54,11 @@ All optional. The workflow degrades without them.
 | `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY` | Developer ID Application certificate as base64 `.p12`, its password, and the identity name. Signs the app. |
 | `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID` | Apple ID, an app-specific password, and the team ID. Notarizes the signed app. |
 
-Until the Apple secrets exist the `.dmg` is unsigned. Gatekeeper reports it as
-damaged on Apple Silicon; clear the quarantine flag once:
-
-```sh
-xattr -d com.apple.quarantine "/Applications/Qué lindo.app"
-```
-
-or install with `brew install --no-quarantine JarekToro/apps/que-lindo`.
+Until the Apple secrets exist the workflow seals the bundle ad hoc
+(`APPLE_SIGNING_IDENTITY=-`). Gatekeeper then shows "Apple could not verify"
+with an Open Anyway button under System Settings, Privacy & Security. Without
+that seal Tauri leaves only the linker's stamp on the main binary, the seal
+does not cover the bundle, and macOS reports the download as "damaged" with
+no way past except `xattr -dr com.apple.quarantine` on the bundle. Homebrew 5
+removed `--no-quarantine`, so the cask cannot do that for the user. Signing
+and notarization are the real fix.

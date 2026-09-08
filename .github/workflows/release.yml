@@ -53,9 +53,7 @@ jobs:
 
       # Signing and notarization are optional. Tauri reads these variables
       # itself; an empty APPLE_CERTIFICATE is an error rather than "unset", so
-      # they are only exported when the certificate secret exists. Without
-      # them the .dmg is unsigned and Gatekeeper needs `xattr -d
-      # com.apple.quarantine` (or `brew install --no-quarantine`).
+      # they are only exported when the certificate secret exists.
       - name: Apple signing and notarization
         if: env.HAS_APPLE_SIGNING == 'true'
         run: |
@@ -67,6 +65,15 @@ jobs:
             echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}"
             echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}"
           } >> "$GITHUB_ENV"
+
+      # Without a certificate, seal the bundle ad hoc ("-"). Tauri otherwise
+      # leaves only the linker's stamp on the main binary, the seal does not
+      # cover the bundle, and Gatekeeper calls the download "damaged" with no
+      # way past. An ad-hoc seal gets the "Apple could not verify" prompt and
+      # the Open Anyway button in System Settings instead.
+      - name: Ad-hoc seal
+        if: env.HAS_APPLE_SIGNING != 'true'
+        run: echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
 
       - name: Build and attach the .dmg
         uses: tauri-apps/tauri-action@v0

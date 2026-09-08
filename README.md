@@ -22,13 +22,13 @@ job needed. This project is named for her.
 macOS on Apple Silicon, with [Homebrew](https://brew.sh):
 
 ```sh
-brew install --no-quarantine JarekToro/apps/que-lindo
+brew install JarekToro/apps/que-lindo
 ```
 
 Or download the `.dmg` from [Releases](https://github.com/JarekToro/que-lindo/releases).
-The app is not yet signed with an Apple Developer ID, so macOS calls it
-"damaged" until the quarantine flag is cleared; `--no-quarantine` does that,
-or run `xattr -d com.apple.quarantine "/Applications/Qué lindo.app"` once.
+The app is not yet signed with an Apple Developer ID. On first launch macOS
+says it could not verify the app; close that dialog, then open System Settings,
+Privacy & Security, scroll to the bottom and click Open Anyway. Once is enough.
 
 Windows and Intel Macs: build from source (below).
 
