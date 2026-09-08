@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/JarekToro/que-lindo/compare/v1.0.0...v1.0.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **release:** seal the macOS bundle ad hoc when no Developer ID is available ([149b154](https://github.com/JarekToro/que-lindo/commit/149b154fb41a0de712c6652d1f3c47742aa5b8a6))
+
 ## 1.0.0 (2026-09-08)
 
 
