@@ -14,8 +14,23 @@ for her memorial, after finding that every option was either a cloud service
 that owned the result or a full video editor that was far more tool than the
 job needed. This project is named for her.
 
-> **Status:** 0.1.0. Developed and used on macOS. Windows builds in CI but has
-> had far less use. There are no releases yet; build from source (below).
+> **Status:** early. Developed and used on macOS. Windows builds in CI but has
+> had far less use.
+
+## Install
+
+macOS on Apple Silicon, with [Homebrew](https://brew.sh):
+
+```sh
+brew install --no-quarantine JarekToro/apps/que-lindo
+```
+
+Or download the `.dmg` from [Releases](https://github.com/JarekToro/que-lindo/releases).
+The app is not yet signed with an Apple Developer ID, so macOS calls it
+"damaged" until the quarantine flag is cleared; `--no-quarantine` does that,
+or run `xattr -d com.apple.quarantine "/Applications/Qué lindo.app"` once.
+
+Windows and Intel Macs: build from source (below).
 
 ## Screenshots
 

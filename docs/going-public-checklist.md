@@ -100,14 +100,14 @@ Tracking what stands between this repository and a public GitHub repo named
       tests, that `dev:mcp` is dev-only, that PRs should keep `tsc` clean).
 - [ ] Add a `.github/ISSUE_TEMPLATE/bug_report.md` asking for OS, ffmpeg
       source, and a project file.
-- [ ] Add a release workflow (tag → `tauri build` → GitHub Release with the
-      `.dmg`/`.msi`). `build.yml` already produces the bundles as artifacts.
+- [x] Add a release workflow. release-please + tauri-action in
+      `.github/workflows/release.yml`; see `docs/releasing.md`.
 - [ ] Publish a script or documentation for producing the two optional ONNX
       models (CLIP ViT-B/32 int8 and FaceNet), or host them and add a fetch
       script like `fetch-ffmpeg.sh`. Today a new user cannot reproduce the
       full auto-build quality.
-- [ ] Consider a Homebrew cask or notarized macOS build. Unsigned builds show
-      Gatekeeper warnings.
+- [x] Homebrew cask in `JarekToro/homebrew-apps`. Notarization still
+      pending: unsigned builds show Gatekeeper warnings (`docs/releasing.md`).
 - [ ] `docs/editor-shell-schematic.html` is a design artifact from the
       Arrange/Time redesign. Keep it if it still reflects the app; otherwise
       delete it.

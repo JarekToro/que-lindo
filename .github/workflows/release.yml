@@ -1,0 +1,98 @@
+name: release
+
+# release-please keeps a "chore(main): release X.Y.Z" pull request open on
+# main, built from Conventional Commits (feat:, fix:, ...). Merging that PR
+# tags vX.Y.Z and creates the GitHub Release with the CHANGELOG section as its
+# body. The remaining jobs then build the macOS app and attach the .dmg, and
+# ask JarekToro/homebrew-apps to bump its cask.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      release_id: ${{ steps.release.outputs.id }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          # The default token means build.yml does not run on the release PR.
+          # Fine: the release job builds the same commit right after merge.
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  macos-arm64:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: macos-latest
+    env:
+      # Secrets cannot be read inside `if:`; mirror the one that matters here.
+      HAS_APPLE_SIGNING: ${{ secrets.APPLE_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch ffmpeg sidecar
+        run: scripts/fetch-ffmpeg.sh aarch64-apple-darwin
+      - name: Install frontend deps
+        working-directory: app
+        run: npm ci
+
+      # Signing and notarization are optional. Tauri reads these variables
+      # itself; an empty APPLE_CERTIFICATE is an error rather than "unset", so
+      # they are only exported when the certificate secret exists. Without
+      # them the .dmg is unsigned and Gatekeeper needs `xattr -d
+      # com.apple.quarantine` (or `brew install --no-quarantine`).
+      - name: Apple signing and notarization
+        if: env.HAS_APPLE_SIGNING == 'true'
+        run: |
+          {
+            echo "APPLE_CERTIFICATE=${{ secrets.APPLE_CERTIFICATE }}"
+            echo "APPLE_CERTIFICATE_PASSWORD=${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+            echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}"
+            echo "APPLE_ID=${{ secrets.APPLE_ID }}"
+            echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}"
+            echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Build and attach the .dmg
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          releaseId: ${{ needs.release-please.outputs.release_id }}
+          tagName: ${{ needs.release-please.outputs.tag_name }}
+          # The product name is "Qué lindo"; keep the asset URL ASCII and
+          # stable for the Homebrew cask: que-lindo_0.2.0_aarch64.dmg
+          assetNamePattern: "que-lindo_[version]_[arch][ext]"
+          includeUpdaterJson: false
+
+  homebrew-cask:
+    needs: [release-please, macos-arm64]
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    env:
+      HAS_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+      # Fine-grained PAT on JarekToro/homebrew-apps with Actions: read and write.
+      GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - name: Skipped, HOMEBREW_TAP_TOKEN not set
+        if: env.HAS_TAP_TOKEN != 'true'
+        run: echo "Set the HOMEBREW_TAP_TOKEN secret to bump the cask right away; the tap also checks daily."
+      - name: Dispatch the cask bump in homebrew-apps
+        if: env.HAS_TAP_TOKEN == 'true'
+        run: gh workflow run bump.yml --repo JarekToro/homebrew-apps -f cask=que-lindo -f version="${{ needs.release-please.outputs.version }}"
