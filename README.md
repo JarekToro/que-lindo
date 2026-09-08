@@ -233,6 +233,39 @@ resolution. `review.py` opens the same detection in a browser so you can nudge
 the corners before committing. Both are single-file Python scripts with inline
 dependencies (`uv run tools/autocrop/review.py scans/`).
 
+## Restoring old photos
+
+Right-click a photo (shelf, card, or a member of a group) and choose **Restore
+photo…**, or press *Restore photo…* in the inspector. The photo opens on its
+own, full window, with a pipeline of steps on the right:
+
+- **Faces**: [PMRF](https://github.com/ohayonguy/PMRF) blind face restoration,
+  GFPGAN, CodeFormer, RestoreFormer. Faces are detected, aligned, restored and
+  pasted back; the rest of the photo is untouched.
+- **Old prints**: Microsoft's
+  [Bringing Old Photos Back to Life](https://github.com/microsoft/Bringing-Old-Photos-Back-to-Life)
+  for fading, noise and scratches.
+- **Any 1× model** [spandrel](https://github.com/chaiNNer-org/spandrel) can
+  load (SCUNet, Restormer, SwinIR, NAFNet, OpenModelDB files) for denoising,
+  deblurring and JPEG cleanup; plus resize, sharpen and grain.
+- **Crop a photographed print**: the `tools/autocrop` detector as a step.
+  *Detect corners* finds the print on its background, *Adjust corners* puts
+  four handles on the photo to drag, and the run straightens and crops at full
+  resolution. As the first step of a pipeline it feeds the cleaned-up print
+  into everything after it.
+
+Each step has a *blend* against its input, so "PMRF at 60%" is one slider, not
+a re-run. Compare with a split you drag, or hold Space to peek at the original.
+Nothing is written until you choose **Replace original** (the original moves to
+`_originals/` beside it and the film picks up the change) or **Save as copy**.
+Presets cover the common cases and you can save your own.
+
+The engine is Python and lives in [tools/restore](tools/restore); it is
+optional and installed once with `tools/restore/setup.sh --all` (see its
+README for the models and where they come from). Without it the Restore view
+explains what to run. Apple Silicon runs everything on the GPU; PMRF's
+CUDA-only attention is re-implemented there as tiled dense attention.
+
 ## Development
 
 ```
@@ -246,6 +279,7 @@ app/e2e/                WebdriverIO end-to-end suites against the real app
 examples/               full-feature project + placeholder media generator
 scripts/                ffmpeg sidecar fetchers
 tools/autocrop          print scanning helper
+tools/restore           photo restoration engine (Python) behind the Restore view
 assets/fonts/           bundled OFL fonts (Crimson Text, Lato)
 assets/brand/           logo (full, mark, wordmark) and the icon source
 docs/                   screenshots and the editor-shell schematic

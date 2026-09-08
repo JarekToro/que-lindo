@@ -95,6 +95,8 @@ export interface EditorState {
   suggestBuild: boolean;
   /** Panel layout preferences (persisted per machine, not per project). */
   ui: UiPrefs;
+  /** Photo open in the Restore view (its path), or null for the film editor. */
+  restoring: string | null;
 
   past: Project[];
   future: Project[];
@@ -106,6 +108,8 @@ export interface EditorState {
   mutate(fn: (p: Project) => Project, opts?: { history?: boolean }): void;
   setMode(mode: "arrange" | "time"): void;
   setSuggestBuild(on: boolean): void;
+  /** Open one photo in the Restore view (null = back to the film). */
+  setRestoring(path: string | null): void;
   setUi(patch: Partial<UiPrefs>): void;
   updateSlide(index: number, patch: Partial<Slide>): void;
   selectSlide(index: number, seek?: boolean): void;
@@ -182,6 +186,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   mode: "arrange",
   suggestBuild: false,
   ui: loadUiPrefs(),
+  restoring: null,
   past: [],
   future: [],
 
@@ -226,6 +231,10 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   setSuggestBuild(on) {
     set({ suggestBuild: on });
+  },
+
+  setRestoring(path) {
+    set({ restoring: path, playing: false });
   },
 
   setUi(patch) {

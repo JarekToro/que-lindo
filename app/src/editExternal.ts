@@ -47,6 +47,13 @@ export function beginExternalEdit(path: string, app: EditorApp | null): void {
   void openInApp(path, app?.path ?? null).catch((e) => console.error("open editor failed", path, e));
 }
 
+/** A photo's bytes were rewritten from inside the app (the Restore view):
+ * same refresh as coming back from an external editor. */
+export async function notePhotoRewritten(path: string): Promise<void> {
+  editing.add(path);
+  await refreshEditedMedia();
+}
+
 /** Called when the window regains focus: re-read whatever changed on disk. */
 export async function refreshEditedMedia(): Promise<void> {
   if (!editing.size) return;

@@ -4,6 +4,7 @@
 mod embed;
 mod focus;
 mod preview;
+mod restore;
 
 use anyhow::Context;
 use serde::Serialize;
@@ -960,7 +961,12 @@ pub fn run() {
 
     builder
         .manage(state)
+        .manage(restore::RestoreState::default())
         .invoke_handler(tauri::generate_handler![
+            restore::restore_status,
+            restore::restore_start,
+            restore::restore_alive,
+            restore::restore_stop,
             embed_media,
             embed_available,
             group_moments,
@@ -990,6 +996,13 @@ pub fn run() {
             missing_paths,
             search_media_folder,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // The restore engine is a child process with its own children
+            // (the PMRF worker); leaving it behind would pin gigabytes.
+            if let tauri::RunEvent::Exit = event {
+                app.state::<restore::RestoreState>().shutdown();
+            }
+        });
 }

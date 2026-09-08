@@ -1,0 +1,44 @@
+diff --git a/Face_Detection/align_warp_back_multiple_dlib.py b/Face_Detection/align_warp_back_multiple_dlib.py
+index 4b82139..14b5054 100644
+--- a/Face_Detection/align_warp_back_multiple_dlib.py
++++ b/Face_Detection/align_warp_back_multiple_dlib.py
+@@ -197,7 +197,7 @@ def affine2theta(affine, input_w, input_h, target_w, target_h):
+ 
+ def blur_blending(im1, im2, mask):
+ 
+-    mask *= 255.0
++    mask = mask.astype(np.float64) * 255.0
+ 
+     kernel = np.ones((10, 10), np.uint8)
+     mask = cv2.erode(mask, kernel, iterations=1)
+@@ -216,7 +216,7 @@ def blur_blending(im1, im2, mask):
+ 
+ def blur_blending_cv2(im1, im2, mask):
+ 
+-    mask *= 255.0
++    mask = mask.astype(np.float64) * 255.0
+ 
+     kernel = np.ones((9, 9), np.uint8)
+     mask = cv2.erode(mask, kernel, iterations=3)
+diff --git a/Face_Detection/align_warp_back_multiple_dlib_HR.py b/Face_Detection/align_warp_back_multiple_dlib_HR.py
+index f3711c9..851c67d 100644
+--- a/Face_Detection/align_warp_back_multiple_dlib_HR.py
++++ b/Face_Detection/align_warp_back_multiple_dlib_HR.py
+@@ -197,7 +197,7 @@ def affine2theta(affine, input_w, input_h, target_w, target_h):
+ 
+ def blur_blending(im1, im2, mask):
+ 
+-    mask *= 255.0
++    mask = mask.astype(np.float64) * 255.0
+ 
+     kernel = np.ones((10, 10), np.uint8)
+     mask = cv2.erode(mask, kernel, iterations=1)
+@@ -216,7 +216,7 @@ def blur_blending(im1, im2, mask):
+ 
+ def blur_blending_cv2(im1, im2, mask):
+ 
+-    mask *= 255.0
++    mask = mask.astype(np.float64) * 255.0
+ 
+     kernel = np.ones((9, 9), np.uint8)
+     mask = cv2.erode(mask, kernel, iterations=3)
