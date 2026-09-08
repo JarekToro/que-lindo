@@ -48,7 +48,9 @@ export const config: WebdriverIO.Config = {
   // `outputDir`, which defaults to app/logs — where CI wasn't looking.
   outputDir: LOGS,
   framework: "mocha",
-  mochaOpts: { ui: "bdd", timeout: 90_000 },
+  // WDIO_TEST_TIMEOUT overrides the per-test limit for runs that do real
+  // work, such as the README screenshots (a face model runs for minutes).
+  mochaOpts: { ui: "bdd", timeout: Number(process.env.WDIO_TEST_TIMEOUT ?? 90_000) },
   reporters: ["spec"],
   logLevel: "warn",
   waitforTimeout: 15_000,

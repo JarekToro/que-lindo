@@ -23,7 +23,8 @@ job needed. This project is named for her.
 |---|---|
 | ![Title card, text controls, split Arrange and Time view](docs/screenshots/01-title.jpg) | ![A four-photo moment opened as a band, arrangement picker](docs/screenshots/02-group.jpg) |
 | ![One photo: motion, fit and framing controls](docs/screenshots/03-photo.jpg) | ![Time view: the same moment as a scatter pile, over the music waveform and beat marks](docs/screenshots/04-time.jpg) |
-| ![Export dialog with size presets](docs/screenshots/05-export.jpg) | |
+| ![Export dialog with size presets](docs/screenshots/05-export.jpg) | ![Crop a photographed print: the detected corners on the photo, ready to drag](docs/screenshots/06-crop.jpg) |
+| ![Restore view: a scanned family photo with faces restored, original on the left of the split, result on the right](docs/screenshots/07-restore.jpg) | |
 
 Photographs from [Unsplash](https://unsplash.com), under the
 [Unsplash License](https://unsplash.com/license).
@@ -235,36 +236,87 @@ dependencies (`uv run tools/autocrop/review.py scans/`).
 
 ## Restoring old photos
 
-Right-click a photo (shelf, card, or a member of a group) and choose **Restore
-photo…**, or press *Restore photo…* in the inspector. The photo opens on its
-own, full window, with a pipeline of steps on the right:
+The photos that matter most at a memorial are often the worst ones: prints
+photographed on a kitchen table, scans of faded snapshots, faces gone soft.
+The **Restore** view is a small photo-restoration studio inside the app for
+exactly those. Right-click a photo (on the shelf, a card, or a member of a
+group) and choose **Restore photo…**, or press *Restore photo…* in the
+inspector's Photo group. The photo opens on its own, full window.
 
-- **Faces**: [PMRF](https://github.com/ohayonguy/PMRF) blind face restoration,
-  GFPGAN, CodeFormer, RestoreFormer. Faces are detected, aligned, restored and
-  pasted back; the rest of the photo is untouched.
-- **Old prints**: Microsoft's
-  [Bringing Old Photos Back to Life](https://github.com/microsoft/Bringing-Old-Photos-Back-to-Life)
-  for fading, noise and scratches.
-- **Any 1× model** [spandrel](https://github.com/chaiNNer-org/spandrel) can
-  load (SCUNet, Restormer, SwinIR, NAFNet, OpenModelDB files) for denoising,
-  deblurring and JPEG cleanup; plus resize, sharpen and grain.
-- **Crop a photographed print**: the `tools/autocrop` detector as a step.
-  *Detect corners* finds the print on its background, *Adjust corners* puts
-  four handles on the photo to drag, and the run straightens and crops at full
-  resolution. As the first step of a pipeline it feeds the cleaned-up print
-  into everything after it.
+### The view
 
-Each step has a *blend* against its input, so "PMRF at 60%" is one slider, not
-a re-run. Compare with a split you drag, or hold Space to peek at the original.
-Nothing is written until you choose **Replace original** (the original moves to
-`_originals/` beside it and the film picks up the change) or **Save as copy**.
-Presets cover the common cases and you can save your own.
+- **Left, the photo.** Wheel to zoom, drag to pan, `F` fits, `1` is actual
+  pixels. Once there is a result, the *Original / Result / Split* buttons swap
+  what you see; *Split* draws a divider you drag across the photo, and holding
+  **Space** peeks at the original from anywhere.
+- **Right, the pipeline.** A preset picker, then the list of steps the run
+  applies in order. Every step has a *blend* against its own input, so "faces
+  at 60%" is a slider, not a repaint, and moving it after a run is free.
+  Steps reorder with the arrows; **+ Add step** offers the whole vocabulary.
+- **Run** shows what the engine is doing ("step 2/3: PMRF, 25 flow steps") and
+  keeps a log. Results are cached per step, so changing a later step or a
+  blend does not re-run the earlier ones.
+- `←` `→` walk the shelf photo by photo, so a pile of scans can be worked
+  through without leaving the view. `Esc` returns to the film.
 
-The engine is Python and lives in [tools/restore](tools/restore); it is
-optional and installed once with `tools/restore/setup.sh --all` (see its
-README for the models and where they come from). Without it the Restore view
-explains what to run. Apple Silicon runs everything on the GPU; PMRF's
-CUDA-only attention is re-implemented there as tiled dense attention.
+### The steps
+
+- **Crop a photographed print** — [tools/autocrop](tools/autocrop) as a step.
+  **Detect corners** finds the print on its background (a towel, a table) and
+  drops four handles on the photo; **Adjust corners** lets you place them by
+  hand; *Inset* trims a sliver of background, *Turn* rotates in quarter turns.
+  The run straightens the print at full resolution. As the first step it feeds
+  a clean print into everything after it.
+- **Faces: PMRF** — [PMRF](https://github.com/ohayonguy/PMRF) blind face
+  restoration. Faces are detected, aligned, restored and pasted back; nothing
+  else in the photo is touched. *Flow steps* trades time for fidelity;
+  *Posterior mean only* gives the minimal-distortion estimate with no
+  hallucinated detail.
+- **Old print: Bringing Old Photos Back to Life** — Microsoft's model for
+  faded, noisy, damaged prints, with optional scratch detection and inpainting
+  and an optional face pass of its own.
+- **Model** — any 1× model [spandrel](https://github.com/chaiNNer-org/spandrel)
+  loads from `tools/restore/models/`: SCUNet and Restormer for denoising and
+  deblurring, SwinIR for JPEG cleanup, GFPGAN, CodeFormer and RestoreFormer
+  for faces, and the 1× models on [OpenModelDB](https://openmodeldb.info/?t=1x).
+  Large photos run tiled.
+- **Resize, Sharpen, Add grain** — the plain tools around the models: shrink a
+  huge scan before a denoiser, sharpen after, put a little grain back on a
+  result that came out too smooth.
+- **Shell command** — a `{in}` `{out}` template for research code in its own
+  environment.
+
+Presets cover the common cases (*Crop a scanned print*, *Old print + faces*,
+*Faces, gentle*, *Denoise*…) and any pipeline can be saved as your own.
+
+### Keeping the result
+
+Nothing touches the file until you say so. **Replace original** writes the
+result over the photo and moves the original to `_originals/` beside it; the
+film refreshes the way it does after editing in an external app. **Save as
+copy** writes a new file, puts it on the shelf, and offers to use it in the
+film in place of the original. JPEG quality is a field next to both.
+
+### The engine
+
+The restoration models run in Python, in [tools/restore](tools/restore): a
+small local server the app starts on demand on a free localhost port and stops
+when it quits. Nothing leaves the machine. It is optional and installs once:
+
+```sh
+tools/restore/setup.sh            # models for faces, denoising, deblurring (about 2 GB)
+tools/restore/setup.sh --all      # plus PMRF and Bringing Old Photos Back to Life
+```
+
+Without it the Restore view says so and shows the command. Apple Silicon runs
+everything on the GPU; PMRF's CUDA-only neighbourhood attention is
+re-implemented there as tiled dense attention, about 0.4 s per flow step on an
+M2 Pro. The same folder is a standalone lab for model work: a web UI that
+compares many pipelines on one image in a synced, zoomable grid, a folder
+curator, and command-line runners for PMRF and Old Photos over a whole folder.
+See [tools/restore/README.md](tools/restore/README.md). The models carry their
+own licenses (CodeFormer and Restormer are non-commercial); they are listed in
+[THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## Development
 
@@ -275,7 +327,8 @@ crates/slideshow-cli    headless CLI (bin: slideshow)
 app/                    Tauri v2 app (React + TypeScript), face detection,
                         embeddings, preview server
 app/e2e/                WebdriverIO end-to-end suites against the real app
-                        (tools/screenshots.spec.ts regenerates the README shots)
+                        (tools/screenshots.spec.ts regenerates the README shots;
+                        see its header, the last two need the restore engine)
 examples/               full-feature project + placeholder media generator
 scripts/                ffmpeg sidecar fetchers
 tools/autocrop          print scanning helper

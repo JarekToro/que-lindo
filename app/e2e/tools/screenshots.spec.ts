@@ -1,12 +1,14 @@
 // README screenshots. Not part of the default run; invoke explicitly:
 //
 //   e2e/tools/fetch-shot-media.sh
-//   SHOT_MEDIA=$PWD/e2e/tools/shot-media SHOT_OUT=$PWD/../docs/screenshots \
+//   SHOT_MEDIA=$PWD/e2e/tools/shot-media SHOT_OUT=$PWD/../docs/screenshots WDIO_TEST_TIMEOUT=900000 \
 //     npx wdio run e2e/wdio.conf.ts --spec e2e/tools/screenshots.spec.ts
 //
 // SHOT_MEDIA holds photos, an optional clip and an mp3; fetch-shot-media.sh
 // fills it with the pinned Unsplash set the committed shots were taken from.
 // SHOT_OUT receives numbered JPEGs at the window's native (retina) resolution.
+// The last two shots need the restore engine (tools/restore/setup.sh --all)
+// and run a face model for real, hence the long WDIO_TEST_TIMEOUT.
 import { browser, $, $$ } from "@wdio/globals";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
@@ -43,6 +45,10 @@ describe("README screenshots", () => {
     };
 
     await resetApp();
+    // A snapshot left by an earlier run that was cut short comes back as a
+    // recovery offer; it would sit over the first capture that takes a while.
+    await browser.pause(600);
+    await dom(() => [...document.querySelectorAll<HTMLButtonElement>(".modal-backdrop button")].find((b) => b.textContent?.trim() === "Discard")?.click());
     await dropFiles(files);
     await waitForImport(files, 60_000);
     // The button stays disabled until every photo's fingerprint is in.
@@ -140,5 +146,66 @@ describe("README screenshots", () => {
     await browser.pause(500);
     await shot("05-export");
     await browser.keys("Escape");
+
+    // The Restore view needs the Python engine (tools/restore/setup.sh); the
+    // debug build finds the repository's copy on its own. Without it these two
+    // shots are skipped rather than failing the run.
+    const toolsDir = path.dirname(fileURLToPath(import.meta.url));
+    const enginePy = path.resolve(toolsDir, "..", "..", "..", "tools", "restore", ".venv", "bin", "python");
+    if (!existsSync(enginePy)) {
+      console.log("SKIP 06/07: restore engine not installed");
+      return;
+    }
+    const engineReady = () =>
+      waitForDom(
+        () => [...document.querySelectorAll(".restore-side .hint")].some((h) => (h.textContent ?? "").startsWith("Engine on")),
+        undefined,
+        180_000,
+        "restore engine did not come up",
+      );
+    const pickPreset = (name: string) =>
+      dom((n) => {
+        const el = document.querySelector<HTMLSelectElement>("#restore-preset");
+        if (!el) return false;
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")?.set?.call(el, n);
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        return el.value === n;
+      }, name);
+    const resultShown = () =>
+      waitForDom(() => document.querySelector(".restore-badge")?.textContent === "result", undefined, 300_000, "no result");
+
+    // 06: a photographed print with the detected corners on it. Staged from
+    // one of the photos so the crop shot needs no extra download; kept out of
+    // the media folder proper so it stays out of the film.
+    const printDir = path.join(MEDIA, "print");
+    mkdirSync(printDir, { recursive: true });
+    const printPhoto = path.join(printDir, "print-on-table.jpg");
+    if (!existsSync(printPhoto)) {
+      const source = files.find((f) => /02-fort/.test(f)) ?? files[0];
+      execFileSync(enginePy, [path.join(toolsDir, "make-print-photo.py"), source, printPhoto], { stdio: "inherit" });
+    }
+    await dropFiles([printPhoto]);
+    await waitForImport([printPhoto], 60_000);
+    await act((s, p) => s.setRestoring(p), printPhoto, 600);
+    await engineReady();
+    await pickPreset("Crop a scanned print");
+    await clickButton("Detect corners", ".restore-side");
+    await waitForDom(() => document.querySelectorAll(".crop-handle").length === 4, undefined, 120_000, "no corners detected");
+    await browser.pause(800);
+    await shot("06-crop");
+
+    // 07: faces restored on the family portrait, compared in the split view.
+    // Gentle, so the shot shows a repair rather than a repaint.
+    const portrait = files.find((f) => /07-family-portrait/.test(f)) ?? files[0];
+    await act((s, p) => s.setRestoring(p), portrait, 600);
+    await engineReady();
+    await waitForDom(() => !document.querySelector(".restore-status"), undefined, 60_000);
+    await pickPreset("Faces, gentle (PMRF 60%)");
+    await clickButton("Run", ".restore-side");
+    await resultShown();
+    await clickButton("Split", ".restore-head");
+    await browser.pause(800);
+    await shot("07-restore");
+    await act((s) => s.setRestoring(null));
   });
 });
