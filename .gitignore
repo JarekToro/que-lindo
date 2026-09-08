@@ -22,3 +22,6 @@ __pycache__/
 # WebdriverIO run output
 /app/e2e/logs
 /app/logs
+
+# Screenshot media, fetched by app/e2e/tools/fetch-shot-media.sh
+/app/e2e/tools/shot-media

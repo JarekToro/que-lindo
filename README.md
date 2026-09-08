@@ -21,9 +21,12 @@ job needed. This project is named for her.
 
 | | |
 |---|---|
-| ![Title card, text controls, split Arrange and Time view](docs/screenshots/01-title.png) | ![A four-photo moment opened as a band, layout picker](docs/screenshots/02-group.png) |
-| ![One photo: motion, fit and framing controls, zoom aim handle](docs/screenshots/03-photo.png) | ![Time view with the music waveform and beat marks](docs/screenshots/04-time.png) |
-| ![Export dialog with size presets](docs/screenshots/05-export.png) | |
+| ![Title card, text controls, split Arrange and Time view](docs/screenshots/01-title.jpg) | ![A four-photo moment opened as a band, arrangement picker](docs/screenshots/02-group.jpg) |
+| ![One photo: motion, fit and framing controls](docs/screenshots/03-photo.jpg) | ![Time view: the same moment as a scatter pile, over the music waveform and beat marks](docs/screenshots/04-time.jpg) |
+| ![Export dialog with size presets](docs/screenshots/05-export.jpg) | |
+
+Photographs from [Unsplash](https://unsplash.com), under the
+[Unsplash License](https://unsplash.com/license).
 
 ## What it does
 
