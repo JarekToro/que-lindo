@@ -36,6 +36,9 @@ export interface EditorState {
   rev: number;
   past: unknown[];
   mode: "arrange" | "time";
+  /** Photo open in the Restore view, or null. */
+  restoring: string | null;
+  setRestoring(path: string | null): void;
   mutate(fn: (p: EditorState["project"]) => EditorState["project"]): void;
   selectSlide(i: number, exclusive?: boolean): void;
   selectCell(i: number | null): void;
