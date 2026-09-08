@@ -32,6 +32,32 @@ at the Institute of Computing Technology, Chinese Academy of Sciences.
 - **FaceNet (VGGFace2)** (`facenet-vggface2.onnx`): check the license of
   whichever conversion you use.
 
+## Photo restoration (optional, `tools/restore`, downloaded by its setup script)
+
+None of these ship in this repository; `tools/restore/setup.sh` fetches them
+from their upstream releases into git-ignored folders. Check each license
+before distributing results commercially; CodeFormer in particular is
+non-commercial.
+
+- **spandrel** and **spandrel_extra_arches** (model loading): MIT.
+- **facexlib** (face detection, alignment, parsing): MIT; its RetinaFace and
+  ParseNet weights are downloaded on first use.
+- **PMRF** (Ohayon, Michaeli, Elad): MIT; weights from Hugging Face
+  (`ohayonguy/PMRF_blind_face_image_restoration`).
+- **Bringing Old Photos Back to Life** (Microsoft Research): MIT; weights from
+  the project's GitHub release. Uses **dlib**'s 68-point landmark model
+  (Boost Software License; the model file is CC0 but trained on iBUG 300-W,
+  which excludes commercial use) and **Synchronized-BatchNorm-PyTorch** (MIT).
+  `tools/restore/patches/` carries a two-line numpy compatibility fix.
+- Starter weights from `download_models.py`: **SCUNet** (Apache-2.0),
+  **Restormer** (ACADEMIC/non-commercial research use per its license file),
+  **SwinIR** (Apache-2.0), **GFPGAN** (Apache-2.0; its StyleGAN2 parts are
+  NVIDIA source-code-license), **CodeFormer** (S-Lab License 1.0,
+  non-commercial), **RestoreFormer** (Apache-2.0).
+- `na_tiled.py` is this project's own reimplementation of NATTEN's
+  neighborhood attention semantics (NATTEN itself is MIT) and carries the
+  repository license.
+
 ## Era ordering
 
 The linear probe in `app/src/era.ts` was trained on the *Date Estimation in

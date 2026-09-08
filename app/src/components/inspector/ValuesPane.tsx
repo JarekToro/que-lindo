@@ -458,6 +458,23 @@ export function CellValues({ slide, index, ci }: { slide: Slide; index: number; 
           <EchoRow label="Pan" value="Ken Burns crop (edit in the project file)" />
         )}
       </VGroup>
+      {cell.source.type === "image" && (
+        <VGroup label="Photo">
+          <div className="field">
+            <span>Restore</span>
+            <div className="field-input">
+              <button
+                onClick={() => {
+                  if (cell.source.type === "image") useEditor.getState().setRestoring(cell.source.path);
+                }}
+                title="Open this photo in the Restore view (faces, old prints, denoise)"
+              >
+                Restore photo…
+              </button>
+            </div>
+          </div>
+        </VGroup>
+      )}
       <VGroup label="Fit">
         <Verbs
           label={cell.fit === "cover" ? "Fill" : cell.fit === "contain" ? "Whole photo" : "Smart"}

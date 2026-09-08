@@ -1046,8 +1046,14 @@ export default function Timeline({
       for (const c of s.cells) if (c.source.type === "image") prefetchEditorApps(c.source.path);
   }, [media, slides]);
 
+  /** "Restore…" then "Edit in <app>" entries for one photo. */
+  const editEntries = (path: string): MenuEntry[] => [
+    { label: "Restore photo…", onPick: () => useEditor.getState().setRestoring(path) },
+    ...externalEditEntries(path),
+  ];
+
   /** "Edit in <app>" entries for one photo (empty for non-image paths). */
-  const editEntries = (path: string): MenuEntry[] => {
+  const externalEditEntries = (path: string): MenuEntry[] => {
     const apps = editorAppsFor(path);
     if (apps === null) return [{ label: "Edit in…", disabled: true, onPick: () => {} }];
     if (!apps.length)

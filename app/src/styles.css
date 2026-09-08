@@ -660,3 +660,75 @@ input[type="range"] { accent-color: var(--accent); padding: 0; }
   background: #2a1d1b; border: 1px solid var(--danger); color: #f2b9b0;
   border-radius: 6px; padding: 8px; white-space: pre-wrap; max-height: 160px; overflow: auto;
 }
+
+/* ---- Restore view: one photo, full window ------------------------------- */
+.restore { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.restore-head {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.restore-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.restore-spacer { flex: 1; }
+.seg { display: inline-flex; gap: 0; }
+.seg button { border-radius: 0; margin-left: -1px; }
+.seg button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.seg button:last-child { border-radius: 0 6px 6px 0; }
+.restore-body { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.restore-stage { flex: 1; position: relative; min-width: 0; background: #000; overflow: hidden; }
+.restore-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+.restore-badge {
+  position: absolute; left: 10px; top: 8px; padding: 2px 8px; border-radius: 10px;
+  background: rgba(0, 0, 0, 0.6); color: var(--accent); font-size: 11px; letter-spacing: 0.04em;
+  pointer-events: none;
+}
+.restore-hint {
+  position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; color: var(--muted);
+  font-size: 12px; pointer-events: none;
+}
+.restore-status {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 16px; text-align: center; color: var(--text); background: rgba(0, 0, 0, 0.45);
+  font-size: 14px; pointer-events: none;
+}
+.restore-setup {
+  position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center;
+  max-width: 520px; margin: 0 auto; padding: 24px; gap: 8px; color: var(--text);
+}
+.restore-setup h2 { margin: 0 0 4px; font-size: 16px; }
+.restore-setup p { margin: 0; line-height: 1.45; }
+.restore-setup pre, .restore-log {
+  margin: 4px 0; padding: 8px 10px; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 6px; font-family: var(--mono); font-size: 11px; white-space: pre-wrap; word-break: break-word;
+  max-height: 200px; overflow: auto;
+}
+.restore-setup code { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+.restore-side {
+  width: 340px; flex-shrink: 0; background: var(--panel); border-left: 1px solid var(--line);
+  overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 12px;
+}
+.restore-group { display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.restore-group:last-child { border-bottom: none; }
+.restore-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.restore-step { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--panel-2); display: flex; flex-direction: column; gap: 6px; }
+.restore-step-head { display: flex; align-items: center; gap: 4px; }
+.restore-step-n { color: var(--muted); font-size: 11px; min-width: 14px; }
+.restore-step-title { flex: 1; font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.restore-step-head button { padding: 0 6px; }
+.restore-step-body { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.restore-field { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.restore-field input[type="number"] { width: 64px; }
+.restore-field.wide { width: 100%; }
+.restore-field.wide select, .restore-field.wide input[type="text"] { flex: 1; max-width: none; min-width: 0; }
+.restore-check { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; }
+.restore-blend { width: 100%; }
+.restore-blend input[type="range"] { flex: 1; max-width: none; }
+.restore-run { width: 100%; padding: 8px; font-size: 13px; }
+.restore-commit button { flex: 1; }
+.hint.warn { color: var(--danger); }
+/* Corner handles for the "crop a photographed print" step. */
+.crop-handle {
+  position: absolute; width: 22px; height: 22px; padding: 0; transform: translate(-50%, -50%);
+  border-radius: 50%; border: 2px solid var(--accent); background: rgba(0, 0, 0, 0.55);
+  cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.crop-handle:active { cursor: grabbing; background: var(--accent); }

@@ -20,6 +20,11 @@ Tracking what stands between this repository and a public GitHub repo named
 - [x] Remove `plans/x.md` (an Aug 31 plan whose phases 0 to 5 have shipped;
       the leftovers are listed under "Later" below).
 - [x] Add `tools/autocrop` (print scanning helpers) to the repo.
+- [x] Add `tools/restore` (photo restoration engine, formerly the separate
+      Image-restore-compare folder) and the in-app Restore view that drives it.
+      Weights, clones and venvs are git-ignored; `tools/restore/setup.sh`
+      rebuilds them. Licenses listed in `THIRD_PARTY.md` (CodeFormer and
+      Restormer are non-commercial).
 
 ## Before the first push
 

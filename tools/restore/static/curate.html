@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>curate</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#141517">
+<style>
+:root{--bg:#141517;--panel:#1c1e22;--line:#2b2f36;--fg:#d7dae0;--mut:#8a919e;--acc:#5aa9ff;--warn:#ffb454;--err:#ff6b6b;--ok:#6fd58a;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 -apple-system,system-ui,sans-serif;display:flex;flex-direction:column;height:100dvh;overflow:hidden;overscroll-behavior:none}
+button{background:#2a2e35;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer;font:inherit;min-height:40px;touch-action:manipulation}
+button:hover{border-color:var(--acc)}
+button:disabled{opacity:.45;cursor:default}
+button.on,button.primary{background:var(--acc);color:#061224;border-color:var(--acc);font-weight:600}
+button.danger{border-color:#7a3a3a;color:#ffb3b3}
+button.icon{min-width:44px;padding:8px}
+input,select,textarea{background:#101215;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;min-height:40px;max-width:100%}
+textarea{font:12px/1.4 ui-monospace,Menlo,monospace;min-height:90px;width:100%}
+.mut{color:var(--mut)}.err{color:var(--err)}.ok{color:var(--ok)}
+#top{display:flex;gap:8px;align-items:center;padding:calc(6px + var(--sat)) 8px 6px;background:var(--panel);border-bottom:1px solid var(--line)}
+#top input{flex:1;min-width:0}
+#top .title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.screen{flex:1;min-height:0;display:none;flex-direction:column}
+.screen.show{display:flex}
+#thumbs{flex:1;overflow:auto;padding:6px;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;align-content:start}
+.th{position:relative;background:#000;border-radius:8px;overflow:hidden;aspect-ratio:4/3;cursor:pointer;border:2px solid transparent}
+.th img{width:100%;height:100%;object-fit:cover;display:block}
+.th .n{position:absolute;left:0;right:0;bottom:0;padding:3px 6px;font-size:11px;background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.8));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.th .badge{position:absolute;right:6px;top:6px;font-size:10px;padding:2px 6px;border-radius:10px;background:var(--ok);color:#062;font-weight:600}
+#viewer{flex:1;min-height:0;position:relative;background:#000}
+#viewer canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+#viewer .lbl{position:absolute;left:0;top:0;right:0;padding:4px 8px;background:linear-gradient(rgba(0,0,0,.75),rgba(0,0,0,0));font-size:12px;pointer-events:none}
+#viewer .status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--mut);pointer-events:none;text-align:center;padding:16px;font-size:15px;background:rgba(0,0,0,.35)}
+#bottom{background:var(--panel);border-top:1px solid var(--line);padding:6px 8px calc(6px + var(--sab));display:flex;flex-direction:column;gap:6px}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.row > select{flex:1;min-width:0}
+.tabs button{flex:1}
+#sheet{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;z-index:10}
+#sheet.open{display:block}
+#sheet .panel{position:absolute;left:0;right:0;bottom:0;max-height:88dvh;overflow:auto;background:var(--panel);border-radius:14px 14px 0 0;padding:14px 12px calc(14px + var(--sab))}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin:10px 0 6px}
+label{display:inline-flex;align-items:center;gap:6px;color:var(--mut);font-size:13px}
+label input[type=number]{width:70px}
+#log{font:11px/1.4 ui-monospace,Menlo,monospace;color:var(--mut);max-height:90px;overflow:auto;white-space:pre-wrap}
+@media (min-width:900px){ button{min-height:34px;padding:5px 12px} #thumbs{grid-template-columns:repeat(auto-fill,minmax(200px,1fr))} }
+</style>
+</head>
+<body>
+<div id="top">
+  <button class="icon" id="back" title="back to grid" hidden>‹</button>
+  <input id="folder" placeholder="/path/to/folder of photos" spellcheck="false">
+  <button id="open" class="primary">Open</button>
+  <span class="title" id="title" hidden></span>
+  <button class="icon" id="prev" hidden>‹</button><button class="icon" id="next" hidden>›</button>
+</div>
+
+<div class="screen show" id="gridscreen">
+  <div id="thumbs"><div class="mut" style="padding:20px">Enter a folder and tap Open.</div></div>
+</div>
+
+<div class="screen" id="viewscreen">
+  <div id="viewer"><canvas></canvas><div class="lbl" id="vlbl"></div><div class="status" id="vstatus" hidden></div></div>
+  <div id="bottom">
+    <div class="row tabs" id="tabs">
+      <button id="t-orig" class="on">original</button>
+      <button id="t-res" disabled>result</button>
+      <button class="icon" id="fit" title="fit">⤢</button>
+      <button class="icon" id="settings" title="pipeline settings">☰</button>
+    </div>
+    <div class="row">
+      <select id="preset"></select>
+      <button id="run" class="primary">Run</button>
+    </div>
+    <div class="row" id="commitrow" hidden>
+      <button id="replace" class="danger">Replace (backup original)</button>
+      <button id="saveas">Save as…</button>
+      <span id="commitmsg" class="mut"></span>
+    </div>
+  </div>
+</div>
+
+<div id="sheet"><div class="panel">
+  <h2>Pipeline</h2>
+  <select id="preset2" style="width:100%"></select>
+  <div class="mut" style="margin:6px 0 4px">Steps (JSON, editable). Types: model, pmrf, bopbtl, resize, sharpen, grain, cmd. Each step has a blend 0..1.</div>
+  <textarea id="steps"></textarea>
+  <div class="row" style="margin-top:6px"><button id="savepreset">Save as preset…</button><button id="delpreset">Delete preset</button></div>
+  <h2>Output</h2>
+  <div class="row"><label>JPEG quality <input type="number" id="quality" value="95" min="60" max="100"></label><span class="mut">used when replacing a .jpg or saving as .jpg</span></div>
+  <h2>Last run</h2>
+  <div id="log">–</div>
+  <div class="row" style="margin-top:10px"><button id="closesheet" class="primary">Done</button></div>
+</div></div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const state = {folder: '', files: [], idx: -1, orig: null, res: null, meta: null, showing: 'orig', view: {scale: 1, tx: 0, ty: 0}, busy: false, models: []};
+
+// ---------------------------------------------------------------- presets
+const BUILTIN = {
+  'PMRF 25 (faces)': [{type: 'pmrf', steps: 25, seed: 0, mmse: false, blend: 1}],
+  'PMRF 25 @0.6': [{type: 'pmrf', steps: 25, seed: 0, mmse: false, blend: 0.6}],
+  'PMRF posterior mean': [{type: 'pmrf', steps: 25, seed: 0, mmse: true, blend: 1}],
+  'BOPBTL global (no faces)': [{type: 'bopbtl', scratch: false, hr: false, faces: false, blend: 1}],
+  'BOPBTL global + scratches': [{type: 'bopbtl', scratch: true, hr: true, faces: false, blend: 1}],
+  'PMRF 25 → BOPBTL global': [{type: 'pmrf', steps: 25, seed: 0, mmse: false, blend: 1}, {type: 'bopbtl', scratch: false, hr: false, faces: false, blend: 1}],
+  'BOPBTL global → PMRF 25': [{type: 'bopbtl', scratch: false, hr: false, faces: false, blend: 1}, {type: 'pmrf', steps: 25, seed: 0, mmse: false, blend: 1}],
+  'BOPBTL global + scratches → PMRF 25': [{type: 'bopbtl', scratch: true, hr: true, faces: false, blend: 1}, {type: 'pmrf', steps: 25, seed: 0, mmse: false, blend: 1}],
+  'PMRF 25 → BOPBTL global + scratches': [{type: 'pmrf', steps: 25, seed: 0, mmse: false, blend: 1}, {type: 'bopbtl', scratch: true, hr: true, faces: false, blend: 1}],
+  'GFPGAN 1.4 @0.35': [{type: 'model', model: 'GFPGANv1.4.pth', blend: 0.35, tile: 512, w: 0.5, face: false}],
+  'SCUNet denoise': [{type: 'model', model: 'scunet_color_real_psnr.pth', blend: 1, tile: 512, w: 0.5, face: false}],
+};
+function presets() { let user = {}; try { user = JSON.parse(localStorage.getItem('cu.presets') || '{}'); } catch (e) {} return {...BUILTIN, ...user}; }
+function renderPresets() {
+  const all = presets(); const cur = localStorage.getItem('cu.preset') || Object.keys(all)[0];
+  for (const id of ['#preset', '#preset2']) $(id).innerHTML = Object.keys(all).map(k => `<option ${k === cur ? 'selected' : ''}>${k}</option>`).join('');
+  $('#steps').value = JSON.stringify(all[cur] || [], null, 1);
+}
+function currentSteps() { try { return JSON.parse($('#steps').value); } catch (e) { alert('steps JSON invalid: ' + e.message); return null; } }
+function pickPreset(name) { localStorage.setItem('cu.preset', name); renderPresets(); }
+$('#preset').onchange = e => pickPreset(e.target.value);
+$('#preset2').onchange = e => pickPreset(e.target.value);
+$('#savepreset').onclick = () => { const st = currentSteps(); if (!st) return; const name = prompt('preset name'); if (!name) return; const user = JSON.parse(localStorage.getItem('cu.presets') || '{}'); user[name] = st; localStorage.setItem('cu.presets', JSON.stringify(user)); pickPreset(name); };
+$('#delpreset').onclick = () => { const name = $('#preset2').value; if (BUILTIN[name]) return alert('built-in preset'); const user = JSON.parse(localStorage.getItem('cu.presets') || '{}'); delete user[name]; localStorage.setItem('cu.presets', JSON.stringify(user)); localStorage.removeItem('cu.preset'); renderPresets(); };
+$('#settings').onclick = () => $('#sheet').classList.add('open');
+$('#closesheet').onclick = () => $('#sheet').classList.remove('open');
+$('#sheet').addEventListener('click', e => { if (e.target === $('#sheet')) $('#sheet').classList.remove('open'); });
+
+// ---------------------------------------------------------------- folder + grid
+async function api(url, opts) { const r = await fetch(url, opts); if (!r.ok) { let t = await r.text(); try { t = JSON.parse(t).detail || t; } catch (e) {} throw new Error(t); } return r.json(); }
+function thumbUrl(name, px) { return `/api/folder/file?path=${encodeURIComponent(state.folder)}&name=${encodeURIComponent(name)}${px ? '&max=' + px : ''}`; }
+async function openFolder(path) {
+  path = (path || '').trim(); if (!path) return;
+  try {
+    const r = await api('/api/curate/folder?path=' + encodeURIComponent(path));
+    state.folder = r.path; state.files = r.files; $('#folder').value = r.path;
+    localStorage.setItem('cu.folder', r.path); history.replaceState(null, '', '?folder=' + encodeURIComponent(r.path));
+    renderGrid();
+  } catch (e) { $('#thumbs').innerHTML = `<div class="err" style="padding:20px">${e.message}</div>`; }
+}
+function renderGrid() {
+  $('#thumbs').innerHTML = state.files.length ? state.files.map((f, i) => `
+    <div class="th" data-i="${i}"><img loading="lazy" src="${thumbUrl(f.name, 400)}">${f.restored ? '<span class="badge">restored</span>' : ''}<div class="n">${f.name}</div></div>`).join('')
+    : '<div class="mut" style="padding:20px">no images in this folder</div>';
+  $('#thumbs').querySelectorAll('.th').forEach(el => el.onclick = () => show(+el.dataset.i));
+}
+$('#open').onclick = () => openFolder($('#folder').value);
+$('#folder').addEventListener('keydown', e => { if (e.key === 'Enter') openFolder($('#folder').value); });
+
+// ---------------------------------------------------------------- viewer
+function loadImg(url) { return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('load failed')); im.src = url; }); }
+function screen(name) { $('#gridscreen').classList.toggle('show', name === 'grid'); $('#viewscreen').classList.toggle('show', name === 'view');
+  for (const id of ['#back', '#title', '#prev', '#next']) $(id).hidden = name !== 'view';
+  for (const id of ['#folder', '#open']) $(id).hidden = name === 'view'; }
+async function show(i) {
+  if (i < 0 || i >= state.files.length) return;
+  state.idx = i; state.orig = null; state.res = null; state.meta = null; state.showing = 'orig';
+  const f = state.files[i];
+  screen('view'); $('#title').textContent = `${i + 1}/${state.files.length}  ${f.name}` + (f.restored ? '  (restored)' : '');
+  $('#t-res').disabled = true; $('#commitrow').hidden = true; $('#commitmsg').textContent = ''; renderTabs();
+  setStatus('loading…');
+  try { state.orig = await loadImg(thumbUrl(f.name)); } catch (e) { setStatus('failed to load'); return; }
+  if (state.idx !== i) return;
+  setStatus(''); fitView();
+}
+$('#back').onclick = () => { screen('grid'); };
+$('#prev').onclick = () => show(state.idx - 1);
+$('#next').onclick = () => show(state.idx + 1);
+function setStatus(t) { const el = $('#vstatus'); el.hidden = !t; el.textContent = t; }
+function renderTabs() { $('#t-orig').classList.toggle('on', state.showing === 'orig'); $('#t-res').classList.toggle('on', state.showing === 'res'); draw(); }
+$('#t-orig').onclick = () => { state.showing = 'orig'; renderTabs(); };
+$('#t-res').onclick = () => { if (state.res) { state.showing = 'res'; renderTabs(); } };
+// hold a tab to peek at the other one
+for (const [id, which] of [['#t-orig', 'orig'], ['#t-res', 'res']]) {
+  let t = null; const el = $(id);
+  el.addEventListener('pointerdown', () => { t = setTimeout(() => { if (which === 'res' && !state.res) return; state.peek = which; draw(); }, 350); });
+  const rel = () => { clearTimeout(t); if (state.peek) { state.peek = null; draw(); } };
+  el.addEventListener('pointerup', rel); el.addEventListener('pointercancel', rel); el.addEventListener('pointerleave', rel);
+}
+
+const cv = $('#viewer canvas'), ctx = cv.getContext('2d');
+function current() { const w = state.peek || state.showing; return w === 'res' && state.res ? state.res : state.orig; }
+function draw() {
+  const dpr = devicePixelRatio || 1, W = $('#viewer').clientWidth, H = $('#viewer').clientHeight;
+  if (!W || !H) return;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const src = current(); const which = state.peek || state.showing;
+  $('#vlbl').innerHTML = src ? `<b>${which === 'res' && state.res ? 'result' : 'original'}</b> <span class="mut">${src.naturalWidth}×${src.naturalHeight} · ${Math.round(state.view.scale * 100)}%</span>` : '';
+  if (!src) return;
+  const bw = state.orig ? state.orig.naturalWidth : src.naturalWidth;
+  const s = state.view.scale * (bw / src.naturalWidth);
+  ctx.imageSmoothingEnabled = s < 2;
+  ctx.drawImage(src, state.view.tx, state.view.ty, src.naturalWidth * s, src.naturalHeight * s);
+}
+function fitView() {
+  const W = $('#viewer').clientWidth, H = $('#viewer').clientHeight, im = state.orig; if (!im || !W || !H) return;
+  const s = Math.min(W / im.naturalWidth, H / im.naturalHeight); state.view = {scale: s, tx: (W - im.naturalWidth * s) / 2, ty: (H - im.naturalHeight * s) / 2}; draw();
+}
+function zoomAt(mx, my, f) { const v = state.view; const ns = Math.max(0.02, Math.min(64, v.scale * f)); const k = ns / v.scale; v.tx = mx - (mx - v.tx) * k; v.ty = my - (my - v.ty) * k; v.scale = ns; draw(); }
+cv.addEventListener('wheel', e => { e.preventDefault(); const r = cv.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015)); }, {passive: false});
+(function () {
+  const pts = new Map(); let last = null;
+  cv.addEventListener('pointerdown', e => { try { cv.setPointerCapture(e.pointerId); } catch (err) {} pts.set(e.pointerId, [e.clientX, e.clientY]); last = null; });
+  cv.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, [e.clientX, e.clientY]);
+    const r = cv.getBoundingClientRect(); const p = [...pts.values()];
+    if (p.length === 1) { const cur = {x: p[0][0], y: p[0][1]}; if (last && last.n === 1) { state.view.tx += cur.x - last.x; state.view.ty += cur.y - last.y; draw(); } last = {n: 1, ...cur}; }
+    else { const mx = (p[0][0] + p[1][0]) / 2 - r.left, my = (p[0][1] + p[1][1]) / 2 - r.top, d = Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]); if (last && last.n === 2) { state.view.tx += mx - last.x; state.view.ty += my - last.y; zoomAt(mx, my, d / last.d); } last = {n: 2, x: mx, y: my, d}; }
+  });
+  const up = e => { pts.delete(e.pointerId); last = null; };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up); cv.addEventListener('lostpointercapture', up);
+  cv.addEventListener('dblclick', fitView);
+})();
+$('#fit').onclick = fitView;
+new ResizeObserver(() => draw()).observe($('#viewer'));
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if (!$('#viewscreen').classList.contains('show')) return;
+  if (e.key === 'ArrowRight') show(state.idx + 1); if (e.key === 'ArrowLeft') show(state.idx - 1);
+  if (e.key === '1') { state.showing = 'orig'; renderTabs(); } if (e.key === '2' && state.res) { state.showing = 'res'; renderTabs(); }
+  if (e.key === ' ') { e.preventDefault(); if (!state.peek) { state.peek = state.showing === 'res' ? 'orig' : 'res'; draw(); } }
+  if (e.key === 'f' || e.key === 'F') fitView(); if (e.key === 'Escape') screen('grid');
+});
+window.addEventListener('keyup', e => { if (e.key === ' ' && state.peek) { state.peek = null; draw(); } });
+
+// ---------------------------------------------------------------- run + commit
+let statusTimer = null;
+async function run() {
+  if (state.busy || state.idx < 0) return;
+  const steps = currentSteps(); if (!steps || !steps.length) return;
+  const f = state.files[state.idx], idx = state.idx;
+  state.busy = true; $('#run').disabled = true; setStatus('running…');
+  statusTimer = setInterval(async () => { try { const i = await api('/api/info'); if (i.status) setStatus(i.status); } catch (e) {} }, 800);
+  try {
+    const meta = await api('/api/curate/process', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({path: state.folder, name: f.name, steps})});
+    if (state.idx !== idx) return;
+    state.res = await loadImg(meta.url + '?v=' + meta.key); state.meta = meta;
+    $('#log').textContent = `${meta.ms} ms${meta.cached ? ' (cached)' : ''}\n` + meta.log.join('\n');
+    $('#t-res').disabled = false; state.showing = 'res'; $('#commitrow').hidden = false; $('#commitmsg').textContent = `${meta.ms} ms${meta.cached ? ', cached' : ''}`; renderTabs(); setStatus('');
+  } catch (e) { setStatus(''); $('#log').textContent = 'error: ' + e.message; alert('run failed: ' + e.message); }
+  finally { clearInterval(statusTimer); state.busy = false; $('#run').disabled = false; }
+}
+$('#run').onclick = run;
+async function commit(mode) {
+  if (!state.meta || state.idx < 0) return;
+  const f = state.files[state.idx];
+  let new_name = null;
+  if (mode === 'replace') {
+    if (!confirm(`Replace ${f.name} with the result?\nThe original moves to _originals/${f.name}.`)) return;
+  } else {
+    const stem = f.name.replace(/\.[^.]+$/, ''); const ext = /\.(jpe?g)$/i.test(f.name) ? f.name.match(/\.[^.]+$/)[0] : '.png';
+    new_name = prompt('save as (in the same folder)', `${stem}_restored${ext}`); if (!new_name) return;
+  }
+  try {
+    const r = await api('/api/curate/commit', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({path: state.folder, name: f.name, key: state.meta.key, mode, new_name, quality: +$('#quality').value || 95})});
+    $('#commitmsg').innerHTML = `<span class="ok">wrote ${r.written}${r.backup ? ', backup ' + r.backup : ''}</span>`;
+    const listing = await api('/api/curate/folder?path=' + encodeURIComponent(state.folder)); state.files = listing.files; renderGrid();
+    if (mode === 'replace') { const i = state.files.findIndex(x => x.name === f.name); if (i >= 0) { await show(i); $('#commitmsg').innerHTML = `<span class="ok">replaced ${r.written}, original in ${r.backup}</span>`; } }
+  } catch (e) { $('#commitmsg').innerHTML = `<span class="err">${e.message}</span>`; }
+}
+$('#replace').onclick = () => commit('replace');
+$('#saveas').onclick = () => commit('saveas');
+
+// ---------------------------------------------------------------- boot
+renderPresets();
+const q = new URLSearchParams(location.search).get('folder') || localStorage.getItem('cu.folder') || '';
+if (q) { $('#folder').value = q; openFolder(q); }
+</script>
+</body>
+</html>

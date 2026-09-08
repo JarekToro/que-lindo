@@ -21,6 +21,7 @@ import Inspector from "./components/Inspector";
 import Preview from "./components/Preview";
 import RecoveryDialog from "./components/RecoveryDialog";
 import RelinkDialog from "./components/RelinkDialog";
+import RestoreView from "./components/RestoreView";
 import Splitter from "./components/Splitter";
 import Timeline from "./components/Timeline";
 import TopBar from "./components/TopBar";
@@ -236,6 +237,8 @@ export default function App() {
         return;
       }
       if (typing) return;
+      // The Restore view has its own keys (arrows browse photos, Space peeks).
+      if (useEditor.getState().restoring) return;
       if (e.key === " ") {
         // Space is a focused button's own activation key — taking it here
         // would leave every button unreachable from the keyboard.
@@ -286,6 +289,7 @@ export default function App() {
   const ui = useEditor((s) => s.ui);
   const setUi = useEditor((s) => s.setUi);
   const dock = ui.dock;
+  const restoring = useEditor((s) => s.restoring);
 
   const timelineSplitter = (
     <Splitter
@@ -341,6 +345,10 @@ export default function App() {
         } as CSSProperties
       }
     >
+      {restoring ? (
+        <RestoreView path={restoring} />
+      ) : (
+        <>
       <TopBar
         ffmpeg={ffmpeg}
         missingCount={missing.length}
@@ -410,6 +418,8 @@ export default function App() {
           </>
         )}
       </div>
+        </>
+      )}
       {exporting && <ExportDialog onClose={() => setExporting(false)} ffmpegFound={!!ffmpeg?.found} />}
       {recovery && <RecoveryDialog offer={recovery} />}
       {relinking && <RelinkDialog missing={missing} onClose={() => setRelinking(false)} />}

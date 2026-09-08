@@ -25,3 +25,13 @@ __pycache__/
 
 # Screenshot media, fetched by app/e2e/tools/fetch-shot-media.sh
 /app/e2e/tools/shot-media
+
+# tools/restore: virtualenvs, weights, clones of upstream research code, run output
+/tools/restore/.venv
+/tools/restore/models
+/tools/restore/cache
+/tools/restore/uploads
+/tools/restore/external/BOPBTL
+/tools/restore/external/PMRF
+/tools/restore/external/*-venv
+/tools/restore/external/*.log

@@ -195,3 +195,24 @@ export const onExportDone = (cb: (p: ExportDone) => void) =>
 /** Native file drops from the OS (returns unlisten). */
 export const onFileDrop = (cb: (paths: string[]) => void) =>
   listen<{ paths: string[] }>("tauri://drag-drop", (e) => cb(e.payload.paths));
+
+// ---- photo restoration engine (tools/restore) ----
+
+/** Where the optional restore engine stands: installed? running? */
+export interface RestoreStatus {
+  available: boolean;
+  /** Folder used, or the first place looked when unavailable. */
+  dir: string;
+  /** Base URL while the server process is alive. */
+  url: string | null;
+  /** The server's log file. */
+  log: string;
+}
+
+export const restoreStatus = () => invoke<RestoreStatus>("restore_status");
+
+/** Start the engine (or reuse the running one); resolves with its base URL
+ * as soon as the process exists — readiness is polled over HTTP. */
+export const restoreStart = () => invoke<string>("restore_start");
+export const restoreAlive = () => invoke<boolean>("restore_alive");
+export const restoreStop = () => invoke<void>("restore_stop");

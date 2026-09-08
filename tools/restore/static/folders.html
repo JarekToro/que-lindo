@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>folder compare</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#141517">
+<style>
+:root{--bg:#141517;--panel:#1c1e22;--line:#2b2f36;--fg:#d7dae0;--mut:#8a919e;--acc:#5aa9ff;--warn:#ffb454;--err:#ff6b6b;--sat:env(safe-area-inset-top);--sab:env(safe-area-inset-bottom)}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 -apple-system,system-ui,sans-serif;display:flex;flex-direction:column;height:100dvh;overflow:hidden;overscroll-behavior:none}
+button{background:#2a2e35;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer;font:inherit;min-height:40px;touch-action:manipulation}
+button:hover{border-color:var(--acc)}
+button.on{background:var(--acc);color:#061224;border-color:var(--acc);font-weight:600}
+button.icon{min-width:44px;padding:8px}
+input,select{background:#101215;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;min-height:40px;max-width:100%}
+.mut{color:var(--mut)}.err{color:var(--err)}
+#main{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#top{display:flex;gap:8px;align-items:center;padding:calc(6px + var(--sat)) 8px 6px;background:var(--panel);border-bottom:1px solid var(--line)}
+#curname{display:none}
+#top select{flex:1;min-width:0}
+#grid{flex:1;display:grid;gap:3px;padding:3px;background:#0c0d0f;overflow:hidden;min-height:0}
+.cell{position:relative;background:#000;border-radius:6px;overflow:hidden;min-height:60px}
+.cell canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+.cell .lbl{position:absolute;left:0;top:0;right:0;padding:4px 8px;background:linear-gradient(rgba(0,0,0,.75),rgba(0,0,0,0));font-size:12px;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell .lbl b{color:#fff}
+.cell .tag{position:absolute;right:8px;top:5px;font-size:11px;color:var(--warn);pointer-events:none}
+.cell .status{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--mut);pointer-events:none;text-align:center;padding:10px}
+#tabs{display:flex;gap:6px;padding:6px 8px calc(6px + var(--sab));background:var(--panel);border-top:1px solid var(--line);overflow-x:auto;align-items:center}
+#tabs button{flex:1;white-space:normal;line-height:1.15;min-width:0;overflow:hidden;padding:6px 4px;font-size:12px}
+#tabs button.icon{flex:0 0 44px}
+#tabs .sep{width:1px;align-self:stretch;background:var(--line);flex:none}
+#zoomlbl{font-size:12px;color:var(--mut);min-width:40px;text-align:center;flex:none}
+#sheet{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;z-index:10}
+#sheet.open{display:block}
+#sheet .panel{position:absolute;left:0;right:0;bottom:0;max-height:85dvh;overflow:auto;background:var(--panel);border-radius:14px 14px 0 0;padding:14px 12px calc(14px + var(--sab))}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin:8px 0 6px}
+.src{display:grid;grid-template-columns:24px 90px 1fr 44px;gap:6px;align-items:center;margin:6px 0}
+.src .n{color:var(--mut);text-align:center}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 0}
+label{display:inline-flex;align-items:center;gap:6px;color:var(--mut);font-size:13px}
+label input[type=number]{width:64px}
+#help{font-size:12px;color:var(--mut);margin-top:10px}
+kbd{background:#2a2e35;border:1px solid var(--line);border-radius:3px;padding:0 4px;font-size:11px}
+@media (min-width:900px){
+  body{display:grid;grid-template-columns:300px 1fr;grid-template-rows:1fr}
+  #main{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+  #side{display:flex;flex-direction:column;overflow:hidden;background:var(--panel);border-right:1px solid var(--line)}
+  #side .top{padding:10px;border-bottom:1px solid var(--line)}
+  #files{flex:1;overflow:auto;padding:4px}
+  #files div{padding:4px 8px;cursor:pointer;border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;gap:8px;align-items:center}
+  #files div:hover{background:#23272e}
+  #files div.sel{background:#243a55;color:#fff}
+  #files img{width:44px;height:30px;object-fit:cover;border-radius:3px;background:#000;flex:none}
+  #files .miss{color:var(--err);font-size:11px}
+  #top select{display:none}
+  #curname{display:block}
+  #sheetbtn{display:none}
+  button{min-height:32px;padding:4px 10px}
+}
+@media (max-width:899px){ #side{display:none} #zoomlbl{display:none} }
+</style>
+</head>
+<body>
+<aside id="side">
+  <div class="top">
+    <h2>Folders (matched by file name)</h2>
+    <div id="sources-side"></div>
+    <div class="row"><button id="addsrc-side">+ folder</button><button id="load-side">Load</button><span class="mut" id="count"></span></div>
+    <div class="err" id="loaderr-side"></div>
+    <div id="help">
+      <div><kbd>←</kbd> <kbd>→</kbd> prev / next · <kbd>wheel</kbd> zoom · <kbd>drag</kbd> pan (synced)</div>
+      <div><kbd>1</kbd>..<kbd>9</kbd> pick folder (hold = flash in all panes) · <kbd>G</kbd> grid/single · <kbd>D</kbd> diff · <kbd>F</kbd> fit · <kbd>0</kbd> 1:1</div>
+    </div>
+  </div>
+  <div id="files"></div>
+</aside>
+<div id="main">
+  <div id="top">
+    <button class="icon" id="prev" title="previous">‹</button>
+    <select id="fileselect"><option>no folders loaded</option></select>
+    <span id="curname" class="mut" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <button class="icon" id="next" title="next">›</button>
+    <button class="icon" id="sheetbtn" title="folders & settings">☰</button>
+  </div>
+  <div id="grid"></div>
+  <div id="tabs"></div>
+</div>
+<div id="sheet"><div class="panel">
+  <h2>Folders (matched by file name)</h2>
+  <div id="sources-sheet"></div>
+  <div class="row"><button id="addsrc-sheet">+ folder</button><button id="load-sheet" class="on">Load</button><span class="mut" id="count2"></span></div>
+  <div class="err" id="loaderr-sheet"></div>
+  <h2>View</h2>
+  <div class="row">
+    <label>grid columns <input type="number" id="cols" value="1" min="1" max="6"></label>
+    <label><input type="checkbox" id="nearest" checked> nearest when zoomed</label>
+    <label>diff gain <input type="number" id="gain" value="6" min="1" max="40"></label>
+  </div>
+  <div class="row"><button id="closesheet">Done</button></div>
+  <div id="help" class="mut">Tabs at the bottom switch which folder is shown. Pinch to zoom, drag to pan, double-tap to fit. Zoom and pan are shared between folders, so tapping between tabs compares the same spot.</div>
+</div></div>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const isNarrow = () => matchMedia('(max-width: 899px)').matches;
+const state = {sources: [], files: [], idx: -1, imgs: [], view: {scale: 1, tx: 0, ty: 0}, active: 0, flash: null, mode: 'single', diff: false, loadSeq: 0, cache: new Map()};
+
+// ---------------------------------------------------------------- sources
+function readQuery() {
+  const q = new URLSearchParams(location.search);
+  const f = q.getAll('f'), l = q.getAll('l');
+  if (f.length) return f.map((p, i) => ({path: p, label: l[i] || p.split('/').filter(Boolean).pop()}));
+  try { const saved = JSON.parse(localStorage.getItem('fc.sources') || 'null'); if (saved && saved.length) return saved; } catch (e) {}
+  return [{path: '', label: 'original'}, {path: '', label: 'pmrf'}, {path: '', label: 'bopbtl'}];
+}
+function renderSources() {
+  for (const id of ['sources-side', 'sources-sheet']) {
+    const el = document.getElementById(id); if (!el) continue;
+    el.innerHTML = state.sources.map((s, i) => `
+      <div class="src"><span class="n">${i + 1}</span><input value="${s.label.replace(/"/g, '&quot;')}" data-l="${i}" placeholder="label"><input value="${s.path.replace(/"/g, '&quot;')}" data-p="${i}" placeholder="/path/to/folder"><button class="icon" data-x="${i}">×</button></div>`).join('');
+    el.querySelectorAll('input[data-l]').forEach(x => x.onchange = () => { state.sources[+x.dataset.l].label = x.value; persist(); renderSources(); renderTabs(); renderGrid(); });
+    el.querySelectorAll('input[data-p]').forEach(x => x.onchange = () => { state.sources[+x.dataset.p].path = x.value.trim(); persist(); renderSources(); });
+    el.querySelectorAll('button[data-x]').forEach(x => x.onclick = () => { state.sources.splice(+x.dataset.x, 1); renderSources(); persist(); });
+  }
+}
+function persist() {
+  try { localStorage.setItem('fc.sources', JSON.stringify(state.sources.map(s => ({path: s.path, label: s.label})))); } catch (e) {}
+  const q = new URLSearchParams(); state.sources.forEach(s => { q.append('f', s.path); q.append('l', s.label); });
+  history.replaceState(null, '', '?' + q.toString());
+}
+['addsrc-side', 'addsrc-sheet'].forEach(id => { const b = document.getElementById(id); if (b) b.onclick = () => { state.sources.push({path: '', label: 'set ' + (state.sources.length + 1)}); renderSources(); }; });
+['load-side', 'load-sheet'].forEach(id => { const b = document.getElementById(id); if (b) b.onclick = () => { loadFolders(); if (id === 'load-sheet') $('#sheet').classList.remove('open'); }; });
+$('#sheetbtn').onclick = () => $('#sheet').classList.add('open');
+$('#closesheet').onclick = () => $('#sheet').classList.remove('open');
+$('#sheet').addEventListener('click', e => { if (e.target === $('#sheet')) $('#sheet').classList.remove('open'); });
+
+async function api(url) { const r = await fetch(url); if (!r.ok) { let t = await r.text(); try { t = JSON.parse(t).detail || t; } catch (e) {} throw new Error(t); } return r.json(); }
+function loaded() { return state.sources.filter(s => s.path && s.set); }
+async function loadFolders() {
+  const srcs = state.sources.filter(s => s.path);
+  const problems = [];
+  const stem = n => n.replace(/\.[^.]+$/, '');
+  for (const s of srcs) {
+    try { const r = await api('/api/folder?path=' + encodeURIComponent(s.path)); s.path = r.path; s.byStem = new Map(r.files.map(n => [stem(n), n])); s.set = new Set(s.byStem.keys()); }
+    catch (e) { s.set = null; s.byStem = null; problems.push(`${s.label}: ${e.message || e}`); }
+  }
+  if (!srcs.length) problems.push('enter at least one folder path');
+  ['loaderr-side', 'loaderr-sheet'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = problems.join(' · '); });
+  const names = []; const seen = new Set();
+  for (const s of loaded()) for (const n of s.set) if (!seen.has(n)) { seen.add(n); names.push(n); }
+  state.files = names.map(n => ({name: n, missing: loaded().filter(s => !s.set.has(n)).map(s => s.label)}));
+  ['count', 'count2'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = names.length ? `${names.length} images` : ''; });
+  state.active = Math.min(state.active, Math.max(0, loaded().length - 1));
+  renderFiles(); renderTabs(); persist();
+  if (names.length) select(0);
+}
+function renderFiles() {
+  const first = loaded()[0];
+  const fl = $('#files');
+  if (fl && first) {
+    fl.innerHTML = state.files.map((f, i) => `<div data-i="${i}" class="${i === state.idx ? 'sel' : ''}"><img loading="lazy" src="${imgUrl(first, f.name)}&max=96"><span>${f.name}</span>${f.missing.length ? `<span class="miss">missing: ${f.missing.join(', ')}</span>` : ''}</div>`).join('');
+    fl.querySelectorAll('div[data-i]').forEach(el => el.onclick = () => select(+el.dataset.i));
+  }
+  const sel = $('#fileselect');
+  sel.innerHTML = state.files.length ? state.files.map((f, i) => `<option value="${i}">${i + 1}/${state.files.length} ${f.name}${f.missing.length ? ' (missing: ' + f.missing.join(', ') + ')' : ''}</option>`).join('') : '<option>no folders loaded</option>';
+  sel.onchange = () => select(+sel.value);
+}
+function renderTabs() {
+  const srcs = loaded();
+  const t = $('#tabs');
+  t.innerHTML = srcs.map((s, k) => `<button data-k="${k}" class="${state.mode === 'single' && state.active === k ? 'on' : ''}"><span class="mut" style="font-size:10px">${k + 1}</span> ${s.label}</button>`).join('')
+    + `<span class="sep"></span><button id="gridbtn" class="icon ${state.mode === 'grid' ? 'on' : ''}" title="show all folders at once">⊞</button><button id="diffbtn" class="icon ${state.diff ? 'on' : ''}" title="diff vs folder 1">Δ</button><button id="fitbtn" class="icon" title="fit">⤢</button><span id="zoomlbl">100%</span>`;
+  t.querySelectorAll('button[data-k]').forEach(b => {
+    const k = +b.dataset.k;
+    b.onclick = () => { state.active = k; if (state.mode === 'grid') { state.mode = 'single'; } renderTabs(); renderGrid(); };
+    // hold (touch or mouse) flashes that folder in every pane, like holding a number key
+    let held = null;
+    b.addEventListener('pointerdown', () => { held = setTimeout(() => { state.flash = k; drawAll(); }, 350); });
+    const release = () => { clearTimeout(held); if (state.flash != null) { state.flash = null; drawAll(); } };
+    b.addEventListener('pointerup', release); b.addEventListener('pointercancel', release); b.addEventListener('pointerleave', release);
+  });
+  $('#gridbtn').onclick = () => { state.mode = state.mode === 'grid' ? 'single' : 'grid'; renderTabs(); renderGrid(); };
+  $('#diffbtn').onclick = () => { state.diff = !state.diff; renderTabs(); drawAll(); };
+  $('#fitbtn').onclick = fitView;
+  drawAll();
+}
+
+// ---------------------------------------------------------------- image loading (with prefetch of the next image)
+function loadImg(url) { return new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('load failed')); im.src = url; }); }
+function imgUrl(s, name) { return `/api/folder/file?path=${encodeURIComponent(s.path)}&name=${encodeURIComponent(s.byStem.get(name) || name)}`; }
+function getImg(s, name) {
+  const key = s.path + '|' + name;
+  if (!state.cache.has(key)) { state.cache.set(key, loadImg(imgUrl(s, name))); if (state.cache.size > 24) state.cache.delete(state.cache.keys().next().value); }
+  return state.cache.get(key);
+}
+async function select(i) {
+  if (i < 0 || i >= state.files.length) return;
+  state.idx = i;
+  const f = state.files[i];
+  $('#curname').textContent = `${i + 1}/${state.files.length}  ${f.name}`;
+  $('#fileselect').value = String(i);
+  const fl = $('#files'); if (fl) { fl.querySelectorAll('div[data-i]').forEach(el => el.classList.toggle('sel', +el.dataset.i === i)); const sel = fl.querySelector('div.sel'); if (sel) sel.scrollIntoView({block: 'nearest'}); }
+  const seq = ++state.loadSeq;
+  const srcs = loaded();
+  state.imgs = srcs.map(() => null); renderGrid();
+  await Promise.all(srcs.map(async (s, k) => {
+    if (!s.set.has(f.name)) return;
+    try { const im = await getImg(s, f.name); if (seq === state.loadSeq) { state.imgs[k] = im; renderGrid(); } } catch (e) {}
+  }));
+  if (seq === state.loadSeq && !select.fitted) { select.fitted = true; fitView(); }
+  // prefetch next image's sources
+  const nf = state.files[i + 1]; if (nf) srcs.forEach(s => { if (s.set.has(nf.name)) getImg(s, nf.name).catch(() => {}); });
+}
+$('#prev').onclick = () => select(state.idx - 1);
+$('#next').onclick = () => select(state.idx + 1);
+
+// ---------------------------------------------------------------- grid + synced view
+const grid = $('#grid'); let cells = [];
+const diffCache = new Map();
+function renderGrid() {
+  const srcs = loaded();
+  const show = state.mode === 'grid' ? srcs.map((s, k) => k) : [Math.min(state.active, srcs.length - 1)].filter(k => k >= 0);
+  const cols = state.mode === 'grid' ? Math.max(1, Math.min(6, +$('#cols').value || 1)) : 1;
+  grid.style.gridTemplateColumns = `repeat(${Math.min(cols, Math.max(1, show.length))}, 1fr)`;
+  grid.style.gridTemplateRows = `repeat(${Math.max(1, Math.ceil(show.length / cols))}, 1fr)`;
+  grid.innerHTML = '';
+  cells = show.map(k => {
+    const s = srcs[k];
+    const el = document.createElement('div'); el.className = 'cell';
+    const canvas = document.createElement('canvas'); const lbl = document.createElement('div'); lbl.className = 'lbl'; lbl.innerHTML = `<b>${k + 1} · ${s.label}</b>`;
+    const tag = document.createElement('div'); tag.className = 'tag';
+    el.append(canvas, lbl, tag);
+    const img = state.imgs[k];
+    if (!img) { const st = document.createElement('div'); st.className = 'status'; st.textContent = state.files[state.idx] && !s.set.has(state.files[state.idx].name) ? 'missing in this folder' : 'loading…'; el.append(st); }
+    grid.append(el);
+    const cell = {el, canvas, ctx: canvas.getContext('2d'), tag, k, img};
+    attach(cell); return cell;
+  });
+  drawAll();
+}
+function baseW() { const im = state.imgs.find(Boolean); return im ? im.naturalWidth : 1; }
+function baseH() { const im = state.imgs.find(Boolean); return im ? im.naturalHeight : 1; }
+function diffCanvas(a, b, gain) {
+  const w = a.naturalWidth, h = a.naturalHeight;
+  const ca = document.createElement('canvas'); ca.width = w; ca.height = h; const xa = ca.getContext('2d'); xa.drawImage(a, 0, 0, w, h);
+  const cb = document.createElement('canvas'); cb.width = w; cb.height = h; const xb = cb.getContext('2d'); xb.drawImage(b, 0, 0, w, h);
+  const da = xa.getImageData(0, 0, w, h), db = xb.getImageData(0, 0, w, h).data, p = da.data;
+  for (let i = 0; i < p.length; i += 4) { p[i] = Math.min(255, Math.abs(p[i] - db[i]) * gain); p[i + 1] = Math.min(255, Math.abs(p[i + 1] - db[i + 1]) * gain); p[i + 2] = Math.min(255, Math.abs(p[i + 2] - db[i + 2]) * gain); }
+  xa.putImageData(da, 0, 0); return ca;
+}
+function drawCell(cell) {
+  const dpr = devicePixelRatio || 1, W = cell.el.clientWidth, H = cell.el.clientHeight;
+  if (!W || !H) return;
+  if (cell.canvas.width !== Math.round(W * dpr) || cell.canvas.height !== Math.round(H * dpr)) { cell.canvas.width = Math.round(W * dpr); cell.canvas.height = Math.round(H * dpr); }
+  const ctx = cell.ctx; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  let src = state.imgs[cell.k], tag = '';
+  if (state.flash != null && state.imgs[state.flash]) { src = state.imgs[state.flash]; tag = (loaded()[state.flash] || {}).label || ''; }
+  else if (state.diff && cell.k !== 0 && src && state.imgs[0]) {
+    const gain = +$('#gain').value || 6; const key = state.idx + '|' + cell.k + '|' + gain;
+    if (!diffCache.has(key)) { diffCache.set(key, diffCanvas(src, state.imgs[0], gain)); if (diffCache.size > 8) diffCache.delete(diffCache.keys().next().value); }
+    src = diffCache.get(key); tag = 'DIFF vs 1';
+  }
+  cell.tag.textContent = tag;
+  if (!src) return;
+  const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
+  const s = state.view.scale * (baseW() / sw);
+  ctx.imageSmoothingEnabled = !($('#nearest').checked && s >= 2);
+  ctx.drawImage(src, state.view.tx, state.view.ty, sw * s, sh * s);
+}
+function drawAll() { cells.forEach(drawCell); const z = $('#zoomlbl'); if (z) z.textContent = Math.round(state.view.scale * 100) + '%'; }
+function fitView() {
+  const c = cells[0]; if (!c) return; const W = c.el.clientWidth, H = c.el.clientHeight, w = baseW(), h = baseH();
+  if (!W || !H) return; const s = Math.min(W / w, H / h); state.view = {scale: s, tx: (W - w * s) / 2, ty: (H - h * s) / 2}; drawAll();
+}
+function zoomAt(mx, my, factor) {
+  const v = state.view; const ns = Math.max(0.02, Math.min(64, v.scale * factor)); const k = ns / v.scale;
+  v.tx = mx - (mx - v.tx) * k; v.ty = my - (my - v.ty) * k; v.scale = ns; drawAll();
+}
+function attach(cell) {
+  const cv = cell.canvas;
+  cv.addEventListener('wheel', e => { e.preventDefault(); const r = cv.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015)); }, {passive: false});
+  // pointer events: 1 finger/mouse = pan, 2 fingers = pinch zoom about the midpoint (synced across panes)
+  const pts = new Map(); let last = null;
+  cv.addEventListener('pointerdown', e => { try { cv.setPointerCapture(e.pointerId); } catch (err) {} pts.set(e.pointerId, [e.clientX, e.clientY]); last = null; });
+  cv.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, [e.clientX, e.clientY]);
+    const r = cv.getBoundingClientRect(); const p = [...pts.values()];
+    if (p.length === 1) {
+      const cur = {x: p[0][0], y: p[0][1]};
+      if (last && last.n === 1) { state.view.tx += cur.x - last.x; state.view.ty += cur.y - last.y; drawAll(); }
+      last = {n: 1, ...cur};
+    } else if (p.length >= 2) {
+      const mx = (p[0][0] + p[1][0]) / 2 - r.left, my = (p[0][1] + p[1][1]) / 2 - r.top, d = Math.hypot(p[0][0] - p[1][0], p[0][1] - p[1][1]);
+      if (last && last.n === 2) { state.view.tx += mx - last.x; state.view.ty += my - last.y; zoomAt(mx, my, d / last.d); }
+      last = {n: 2, x: mx, y: my, d};
+    }
+  });
+  const up = e => { pts.delete(e.pointerId); last = null; };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up); cv.addEventListener('lostpointercapture', up);
+  cv.addEventListener('dblclick', fitView);
+}
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); select(state.idx + 1); }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); select(state.idx - 1); }
+  if (e.key >= '1' && e.key <= '9') { const k = +e.key - 1; if (k < loaded().length) { if (state.mode === 'grid') { if (state.flash !== k) { state.flash = k; drawAll(); } } else if (state.active !== k) { state.active = k; renderTabs(); renderGrid(); } } }
+  if (e.key === '0') { const c = cells[0]; if (!c) return; state.view = {scale: 1, tx: (c.el.clientWidth - baseW()) / 2, ty: (c.el.clientHeight - baseH()) / 2}; drawAll(); }
+  if (e.key === 'f' || e.key === 'F') fitView();
+  if (e.key === 'g' || e.key === 'G') { state.mode = state.mode === 'grid' ? 'single' : 'grid'; renderTabs(); renderGrid(); }
+  if (e.key === 'd' || e.key === 'D') { state.diff = !state.diff; renderTabs(); drawAll(); }
+});
+window.addEventListener('keyup', e => { if (e.key >= '1' && e.key <= '9' && state.flash != null) { state.flash = null; drawAll(); } });
+window.addEventListener('blur', () => { state.flash = null; drawAll(); });
+$('#cols').onchange = () => { renderGrid(); fitView(); };
+['#gain', '#nearest'].forEach(s => $(s).onchange = () => { diffCache.clear(); drawAll(); });
+new ResizeObserver(() => drawAll()).observe(grid);
+window.addEventListener('orientationchange', () => setTimeout(fitView, 300));
+
+// desktop default: grid of all folders; phone default: single pane + tabs
+if (!isNarrow()) { state.mode = 'grid'; $('#cols').value = 3; }
+state.sources = readQuery(); renderSources();
+if (state.sources.some(s => s.path)) loadFolders();
+</script>
+</body>
+</html>
