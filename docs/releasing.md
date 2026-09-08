@@ -40,6 +40,10 @@ release, rewrites the cask's version and sha256, audits it and pushes.
 
 To force a version, add a `Release-As: X.Y.Z` footer to any commit.
 
+The first release was 1.0.0 rather than 0.1.0: with no tag matching the
+manifest, release-please falls back to its built-in first version, 1.0.0,
+unless `initial-version` is set in `release-please-config.json`.
+
 ## Secrets
 
 All optional. The workflow degrades without them.

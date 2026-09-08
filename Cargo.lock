@@ -5231,7 +5231,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slideshow-app"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "core-foundation 0.10.1",
@@ -5254,7 +5254,7 @@ dependencies = [
 
 [[package]]
 name = "slideshow-cli"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5264,7 +5264,7 @@ dependencies = [
 
 [[package]]
 name = "slideshow-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "cosmic-text",
